@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mariáš Online</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen">
+            <div class="login-container">
+                <h1>🃏 Mariáš Online</h1>
+                <p class="subtitle">Tradiční česká karetní hra</p>
+                <div class="login-form">
+                    <input type="text" id="player-name" placeholder="Tvoje jméno" maxlength="20">
+                    <button onclick="joinGame()" class="btn-primary">Připojit se do hry</button>
+                </div>
+                <div class="info-box">
+                    <h3>ℹ️ Informace</h3>
+                    <ul>
+                        <li>Maximálně 3 aktivní hráči</li>
+                        <li>Ostatní mohou sledovat jako diváci</li>
+                        <li>Hra začne automaticky při 3 hráčích</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen hidden">
+            <!-- Header -->
+            <header class="game-header">
+                <div class="header-left">
+                    <h2>🃏 Mariáš</h2>
+                    <span class="phase-indicator" id="phase-indicator">Čekáme na hráče...</span>
+                </div>
+                <div class="header-right">
+                    <button onclick="toggleChat()" class="btn-icon">💬</button>
+                    <button onclick="showRules()" class="btn-icon">ℹ️</button>
+                </div>
+            </header>
+
+            <div class="game-container">
+                <!-- Players Info -->
+                <div class="players-panel">
+                    <div class="panel-header">Hráči</div>
+                    <div id="players-list" class="players-list"></div>
+                    
+                    <div class="scores-section">
+                        <div class="panel-header">Skóre</div>
+                        <div id="scores-list" class="scores-list"></div>
+                    </div>
+                </div>
+
+                <!-- Main Game Area -->
+                <div class="game-area">
+                    <!-- Game Table -->
+                    <div class="game-table">
+                        <div class="table-info">
+                            <div id="bid-info" class="bid-display"></div>
+                            <div id="trump-info" class="trump-display"></div>
+                        </div>
+                        
+                        <!-- Current Trick -->
+                        <div id="trick-area" class="trick-area"></div>
+                        
+                        <!-- Trump Selection and Talon Exchange (COMBINED) -->
+                        <div id="trump-selection-panel" class="trump-selection-panel hidden">
+                            <h3>1. Vyber trumfovou barvu</h3>
+                            <div class="suit-selection">
+                                <button onclick="selectTrumpSuit('hearts')" class="trump-select-btn hearts" data-suit="hearts">
+                                    <span class="suit-symbol">♥</span>
+                                    <span class="suit-name">Červené</span>
+                                </button>
+                                <button onclick="selectTrumpSuit('diamonds')" class="trump-select-btn diamonds" data-suit="diamonds">
+                                    <span class="suit-symbol">♦</span>
+                                    <span class="suit-name">Kule</span>
+                                </button>
+                                <button onclick="selectTrumpSuit('clubs')" class="trump-select-btn clubs" data-suit="clubs">
+                                    <span class="suit-symbol">♣</span>
+                                    <span class="suit-name">Žaludy</span>
+                                </button>
+                                <button onclick="selectTrumpSuit('spades')" class="trump-select-btn spades" data-suit="spades">
+                                    <span class="suit-symbol">♠</span>
+                                    <span class="suit-name">Zelené</span>
+                                </button>
+                            </div>
+                            
+                            <h3 style="margin-top: 20px;">2. Vyber 2 karty k odhození z ruky</h3>
+                            <p class="talon-hint">💡 Karty z talonu už máš v ruce (máš 12 karet). Vyber 2 k odhození.</p>
+                            <p class="talon-hint">⚠️ NELZE odhodit esa a desítky!</p>
+                            <div class="talon-selection">
+                                <p>Vybrané karty: <span id="discard-count">0/2</span></p>
+                                <button onclick="confirmTrumpAndDiscard()" class="btn-primary" id="confirm-trump-discard">Potvrdit trumf a odhození</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bidding Panel -->
+                    <div id="bidding-panel" class="bidding-panel hidden">
+                        <h3>Licitace</h3>
+                        <div class="bid-options">
+                            <div class="bid-buttons" id="bid-buttons"></div>
+                            <button onclick="passBid()" class="btn-secondary">Pasovat</button>
+                        </div>
+                    </div>
+
+                    <!-- Player's Hand -->
+                    <div id="player-hand" class="player-hand">
+                        <div class="hand-header">
+                            <span>Tvoje karty</span>
+                            <button onclick="toggleMarriages()" class="btn-small" id="marriage-btn">Hlásit svatbu</button>
+                        </div>
+                        <div id="hand-cards" class="card-row"></div>
+                        
+                        <!-- Marriage Selection -->
+                        <div id="marriage-selection" class="marriage-selection hidden">
+                            <p>Vyber barvu svatby (K+Q):</p>
+                            <div class="suit-buttons">
+                                <button onclick="declareMarriage('hearts')" class="suit-btn">♥ Srdce</button>
+                                <button onclick="declareMarriage('diamonds')" class="suit-btn">♦ Káry</button>
+                                <button onclick="declareMarriage('clubs')" class="suit-btn">♣ Žaludy</button>
+                                <button onclick="declareMarriage('spades')" class="suit-btn">♠ Listy</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Panel -->
+                <div id="chat-panel" class="chat-panel hidden">
+                    <div class="panel-header">
+                        <span>Chat</span>
+                        <button onclick="toggleChat()" class="btn-close">×</button>
+                    </div>
+                    <div id="chat-messages" class="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input" placeholder="Napiš zprávu..." maxlength="200">
+                        <button onclick="sendMessage()" class="btn-primary">Odeslat</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Messages -->
+            <div id="game-messages" class="game-messages"></div>
+
+            <!-- Round End Modal -->
+            <div id="round-modal" class="modal hidden">
+                <div class="modal-content">
+                    <h2>🎉 Konec kola</h2>
+                    <div id="round-results"></div>
+                    <button onclick="startNewRound()" class="btn-primary">Další kolo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+</body>
+</html>
