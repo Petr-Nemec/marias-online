@@ -119,20 +119,18 @@ class Client:
             return
         self.closed = True
         self.close_code = code
-        with contextlib.suppress(asyncio.QueueFull):
-            self.queue.put_nowait(None)
+        # The sentinel must always get in, so the writer is guaranteed to stop.
+        while True:
+            try:
+                self.queue.put_nowait(None)
+            except asyncio.QueueFull:
+                self.queue.get_nowait()
+            else:
+                return
 
     async def writer(self) -> None:
-        """Pump queued messages to the socket until the connection is closed."""
-        while True:
-            if self.closed and self.queue.empty():
-                return
-            try:
-                text = await asyncio.wait_for(self.queue.get(), timeout=1.0)
-            except TimeoutError:
-                continue
-            if text is None:
-                return
+        """Pump queued messages to the socket until the closing sentinel arrives."""
+        while (text := await self.queue.get()) is not None:
             await self._sender(text)
 
 

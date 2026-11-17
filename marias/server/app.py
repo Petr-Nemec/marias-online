@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 import re
@@ -10,6 +9,7 @@ from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import anyio
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -108,36 +108,46 @@ async def game_socket(websocket: WebSocket) -> None:
     await websocket.accept()
     client = Client(websocket.send_text, ip)
     hub.connect(client)
+    writer_done = anyio.Event()
 
-    async def reader() -> None:
-        # An anonymous connection must introduce itself promptly.
-        first = await asyncio.wait_for(websocket.receive_text(), timeout=HELLO_TIMEOUT)
-        hub.receive(client, first)
-        if client.session is None:
-            client.close(1008)
-            return
-        while not client.closed:
-            hub.receive(client, await websocket.receive_text())
+    async def write(scope: anyio.CancelScope) -> None:
+        try:
+            await client.writer()
+        except Exception:  # the peer is gone; the reader will notice too
+            log.debug("websocket send failed", exc_info=True)
+        finally:
+            writer_done.set()
+            scope.cancel()
 
-    tasks = {asyncio.create_task(reader()), asyncio.create_task(client.writer())}
+    async def read(scope: anyio.CancelScope) -> None:
+        try:
+            # An anonymous connection must introduce itself promptly.
+            with anyio.fail_after(HELLO_TIMEOUT):
+                first = await websocket.receive_text()
+            hub.receive(client, first)
+            if client.session is None:
+                client.close(1008)
+            while not client.closed:
+                hub.receive(client, await websocket.receive_text())
+        except (WebSocketDisconnect, TimeoutError, KeyError, RuntimeError):
+            # Disconnect, hello timeout, or a binary frame / frame after close.
+            pass
+        client.close(client.close_code if client.closed else 1000)
+        # Let the writer flush a final message (e.g. "replaced"), but not forever.
+        with anyio.move_on_after(1.0):
+            await writer_done.wait()
+        scope.cancel()
+
     try:
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in done:
-            error = task.exception()
-            if error is not None and not isinstance(
-                error, (WebSocketDisconnect, TimeoutError, KeyError, RuntimeError)
-            ):
-                log.error("websocket handler failed", exc_info=error)
-        if client.closed and pending:
-            # Give the writer a moment to flush a final message (e.g. "replaced").
-            await asyncio.wait(pending, timeout=1.0)
+        async with anyio.create_task_group() as group:
+            group.start_soon(write, group.cancel_scope)
+            group.start_soon(read, group.cancel_scope)
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        # Release the connection synchronously first, so it happens even when the
+        # handler itself is being cancelled; otherwise per-IP counters would leak.
         code = client.close_code if client.closed else 1000
         hub.disconnect(client)
-        with contextlib.suppress(Exception):
+        with anyio.CancelScope(shield=True), contextlib.suppress(Exception):
             await websocket.close(code=code)
 
 

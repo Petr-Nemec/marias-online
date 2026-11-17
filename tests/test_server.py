@@ -252,3 +252,13 @@ def test_guest_identities_are_capped(monkeypatch):
         # The most recent identity survives and is recognised again.
         with test_client.websocket_connect("/ws", headers=ORIGIN) as ws:
             assert hello(ws, token=tokens[-1])["token"] == tokens[-1]
+
+
+def test_connection_counters_are_released():
+    app = create_app(Settings(max_connections_per_ip=3))
+    with TestClient(app) as test_client:
+        for i in range(10):  # far more than the per-IP limit, one after another
+            with test_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+                hello(ws, name=f"Host {i}")
+        hub = app.state.hub
+        assert hub.clients == set() and hub._per_ip == {}
