@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b1d14">
+  <meta name="description" content="Licitovaný mariáš online podle pravidel Českého svazu mariáše, s prémiovými body.">
+  <title>Mariáš Online – licitovaný mariáš</title>
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/bitter-latin-ext-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="./" aria-label="Mariáš Online – herna">
+      <img src="img/icon.svg" alt="" width="28" height="28">
+      <span>Mariáš Online</span>
+    </a>
+    <span id="conn" class="conn" role="status" aria-live="polite"></span>
+    <nav class="bar-actions">
+      <button id="btn-sound" class="ghost" type="button" aria-pressed="true">Zvuk zapnutý</button>
+      <button id="btn-help" class="ghost" type="button">Pravidla</button>
+      <button id="btn-name" class="ghost name" type="button" hidden></button>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="view-login" class="view login" hidden>
+      <div class="login-box">
+        <h1>Licitovaný mariáš</h1>
+        <p>Hraje se podle soutěžních pravidel Českého svazu mariáše: dvanáct licitačních stupňů od sedmy
+          po dvě sedmy se stovkou, fleky, tichá sedma i prémiové body.</p>
+        <form id="login-form" autocomplete="off">
+          <label for="login-name">Jak ti máme u stolu říkat?</label>
+          <div class="row">
+            <input id="login-name" name="name" type="text" minlength="2" maxlength="20" required
+                   placeholder="Přezdívka" autocomplete="nickname">
+            <button class="primary" type="submit">Vstoupit do herny</button>
+          </div>
+          <p class="hint">Stačí přezdívka, žádná registrace. Prohlížeč si tě zapamatuje, takže se po výpadku
+            připojení vrátíš ke svému stolu.</p>
+        </form>
+      </div>
+    </section>
+
+    <section id="view-lobby" class="view lobby" hidden>
+      <div class="lobby-main">
+        <div class="lobby-head">
+          <h1>Herna</h1>
+          <span id="lobby-online" class="muted"></span>
+        </div>
+        <div id="lobby-tables" class="tables"></div>
+      </div>
+      <aside class="lobby-side">
+        <h2>Založit stůl</h2>
+        <form id="create-form" autocomplete="off">
+          <label for="create-name">Název stolu</label>
+          <input id="create-name" name="name" type="text" maxlength="30" placeholder="Třeba U Petra">
+          <label for="create-seats">Počet hráčů</label>
+          <select id="create-seats" name="seats">
+            <option value="3">3 hráči</option>
+            <option value="4">4 hráči – rozdávající pauzíruje</option>
+          </select>
+          <label for="create-stake">Základ hry</label>
+          <select id="create-stake" name="stake">
+            <option value="10">desetník (0,10 Kč)</option>
+            <option value="20" selected>dvacetník (0,20 Kč) – soutěžní</option>
+            <option value="50">padesátník (0,50 Kč)</option>
+            <option value="100">koruna (1 Kč)</option>
+          </select>
+          <label for="create-timer">Čas na tah</label>
+          <select id="create-timer" name="turn_seconds">
+            <option value="30">30 sekund</option>
+            <option value="60" selected>60 sekund</option>
+            <option value="120">2 minuty</option>
+            <option value="0">bez limitu</option>
+          </select>
+          <label for="create-dealing">Rozdávání</label>
+          <select id="create-dealing" name="dealing">
+            <option value="cut" selected>jen snímat (soutěžně, karty se nemíchají)</option>
+            <option value="shuffle">míchat před každou hrou</option>
+          </select>
+          <label class="check"><input id="create-private" name="private" type="checkbox">
+            Soukromý stůl – jen přes odkaz</label>
+          <button class="primary" type="submit">Založit stůl a přisednout</button>
+        </form>
+      </aside>
+    </section>
+
+    <section id="view-table" class="view table-view" hidden></section>
+  </main>
+
+  <dialog id="dlg-name" class="dialog small">
+    <form id="name-form" method="dialog">
+      <h2>Změnit přezdívku</h2>
+      <input id="name-input" type="text" minlength="2" maxlength="20" required aria-label="Přezdívka">
+      <div class="dialog-actions">
+        <button type="button" class="ghost" data-close>Zrušit</button>
+        <button type="submit" class="primary">Uložit přezdívku</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-replaced" class="dialog small">
+    <h2>Hraješ v jiném okně</h2>
+    <p>Mariáš je pod tvou přezdívkou otevřený jinde. Hrát lze vždy jen v jednom okně.</p>
+    <div class="dialog-actions">
+      <button id="btn-takeover" type="button" class="primary">Hrát v tomto okně</button>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-help" class="dialog help">
+    <div class="help-head">
+      <h2>Pravidla licitovaného mariáše</h2>
+      <button type="button" class="ghost" data-close>Zavřít pravidla</button>
+    </div>
+    <div class="help-body">
+      <p>Hraje se podle Obecných pravidel hry mariáš a soutěžních pravidel licitovaného mariáše Českého
+        svazu mariáše (2014). Tady je to nejdůležitější.</p>
+
+      <h3>Karty a body</h3>
+      <p>32 karet ve čtyřech barvách: červené, zelené, kule a žaludy. Při hrách s trumfy je pořadí
+        7, 8, 9, spodek, svršek, král, desítka, eso. Při betlu a durchu platí přirozené pořadí
+        7, 8, 9, 10, spodek, svršek, král, eso. Každé eso a každá desítka je za 10 bodů, poslední štych
+        také za 10. Hláška – svršek a král stejné barvy v jedné ruce – je za 20, v trumfech za 40. Hlásí
+        se zahráním první karty z dvojice.</p>
+
+      <h3>Rozdání a licitace</h3>
+      <p>Rozdává se 5-5-5, dvě karty do talonu a znovu 5-5-5. Licitaci zahajuje zadák proti forhontovi:
+        nabízí stupně žebříčku a forhont odpovídá „mám“, nebo pasuje. Kdo má přednost, nabídku jen drží;
+        kdo ji nemá, musí nabídnout víc. Po odstoupení jednoho z dvojice nastupuje prostřední hráč na jeho
+        místo. Pokud nikdo nelicituje, hraje forhont nejméně sedmu.</p>
+      <ol class="ladder">
+        <li>Sedma</li><li>Sedma červená</li><li>Sto</li><li>Sto a sedma</li>
+        <li>Sto červených</li><li>Sto a sedma červených</li><li>Betl</li><li>Durch</li>
+        <li>Dvě sedmy</li><li>Dvě sedmy a sto</li><li>Dvě sedmy, červená trumf</li>
+        <li>Dvě sedmy, červená trumf, a sto</li>
+      </ol>
+      <p>Vítěz licitace vezme talon, dvě karty odloží a ohlásí vylicitovaný nebo jakýkoli vyšší závazek.
+        Esa a desítky smí do talonu jen při betlu a durchu, hlášená sedma nikdy. Kdo vylicitoval jen
+        obyčejnou sedmu a nechce hrát, může karty složit (omyl) a zaplatí každému 1,20 Kč. Sedmu nelze
+        hlásit bez trumfové sedmy v ruce.</p>
+
+      <h3>Závazky</h3>
+      <ul>
+        <li><b>Sedma</b> je hra a sedma: získat víc bodů než obrana a vzít poslední štych trumfovou
+          sedmou. Obě části se flekují i platí zvlášť.</li>
+        <li><b>Sto</b>: uhrát aspoň 100 bodů, do stovky se počítá jen jedna hláška.</li>
+        <li><b>Betl</b>: nevzít žádný štych. <b>Durch</b>: vzít všechny. Bez trumfů, vynáší aktér.</li>
+        <li><b>Dvě sedmy</b>: aktér určí trumfy a pomocnou barvu. Předposlední štych musí vzít pomocnou
+          sedmou a poslední trumfovou. Má-li některý obránce čtyři a více pomocných, platí aktér.</li>
+      </ul>
+
+      <h3>Sehrávka</h3>
+      <p>Vynáší forhont, při betlu a durchu aktér. Musíš přiznat barvu a přebít, pokud můžeš. Nemáš-li
+        barvu, musíš hrát trumf, a je-li už ve štychu trumf, tak vyšší. Je-li barva už přebita trumfem,
+        stačí ji přiznat. Hlášenou sedmu smíš zahrát až jako poslední kartu její barvy.</p>
+
+      <h3>Fleky</h3>
+      <p>Obrana může dát flek, aktér re, obrana tutti a aktér boty. Každý stupeň sazbu zdvojnásobí. Zvyšovat
+        lze jen tu část závazku, kterou soupeř právě fleknul. Sedma se sehrává jen s flekem na sedmu nebo
+        s re na hru; jinak se rovnou vyplatí.</p>
+
+      <h3>Sazby (základ 0,20 Kč)</h3>
+      <table class="rates">
+        <tr><th>Hra</th><td>0,20</td><th>Betl</th><td>3,00</td></tr>
+        <tr><th>Sedma</th><td>0,40</td><th>Durch</th><td>6,00</td></tr>
+        <tr><th>Sto</th><td>0,80</td><th>Dvě sedmy</th><td>8,00</td></tr>
+        <tr><th>Tichá sedma</th><td>0,20</td><th>Limit</th><td>100,00</td></tr>
+      </table>
+      <p>Červené trumfy platí dvojnásob. Za každých 10 bodů nad sto se sto platí ještě jednou; neuhrané
+        sto se platí za každých chybějících 10 bodů a za hlášky obrany. Tiché sto zdvojnásobí hru a každých
+        dalších 10 bodů ji přidá znovu. Tichá sedma se při stovce platí tomu, kdo vezme poslední štych
+        trumfovou sedmou; zabitou platí ten, komu patřila. U stolu pro čtyři platí pauzírující jako obránce.</p>
+
+      <h3>Prémiové body</h3>
+      <p>Za hlášené a vyhrané těžké hry a za úspěšné fleky na betl a durch se připisují prémiové body
+        podle bodovací tabulky ČSM 2014. Rozhoduje počet trumfů (včetně karet odložených do talonu) a to,
+        zda měl aktér výnos. Červené trumfy body zdvojnásobí. U betlu a durchu program „chytající“ karty
+        a „ložené“ barvy posuzuje podle pevného vzorce, popsaného v dokumentaci.</p>
+    </div>
+  </dialog>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <noscript><p class="noscript">Mariáš Online potřebuje zapnutý JavaScript.</p></noscript>
+</body>
+</html>
