@@ -1,4 +1,5 @@
-from marias.premium import _combine, betl_catching_cards, durch_suit_is_solid
+from marias.premium import _combine
+from marias.rules import betl_catching_cards, durch_suit_is_solid
 
 from .helpers import cards
 
@@ -11,11 +12,14 @@ def test_without_lead_only_the_best_criterion_uses_the_higher_value():
 
 
 def test_betl_catching_cards():
-    assert betl_catching_cards(cards("h7 h8 h9")) == []
-    assert betl_catching_cards(cards("h7 hA")) == ["hA"]
-    assert betl_catching_cards(cards("h8")) == ["h8"]  # h7 is outstanding
-    assert betl_catching_cards(cards("h7 h9 hX")) == []  # h8 is ducked with h7
-    assert betl_catching_cards(cards("h9 hX")) == ["h9", "hX"]
+    # A card is catching when the defence holds a lower card of its suit.
+    assert betl_catching_cards(cards("h7 h8 h9"), cards("hX hA")) == []
+    assert betl_catching_cards(cards("h7 hA"), cards("h8")) == ["hA"]
+    assert betl_catching_cards(cards("h8"), cards("h7")) == ["h8"]
+    # Must-beat: the defence leads h8 and the declarer has to go over it with h9.
+    assert betl_catching_cards(cards("h7 h9"), cards("h8")) == ["h9"]
+    assert betl_catching_cards(cards("h7 hA"), []) == []  # nothing outstanding
+    assert betl_catching_cards(cards("hA"), cards("l7")) == []
 
 
 def test_durch_solid_suits():

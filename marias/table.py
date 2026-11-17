@@ -10,6 +10,7 @@ settled as a defender, as in competition play.
 
 from __future__ import annotations
 
+import logging
 import random
 import time
 from collections import deque
@@ -30,6 +31,8 @@ from .contracts import (
 )
 from .deal import PLAYERS, Deal, Outcome, Phase, RuleError
 
+log = logging.getLogger("marias.table")
+
 ROLE_NAMES = ("forhont", "middle", "rear")
 STAKES_HALERE = (10, 20, 50, 100)
 TURN_SECONDS = (0, 30, 60, 120)
@@ -40,8 +43,10 @@ HISTORY_SIZE = 100
 BETWEEN_DEALS_SECONDS = 45.0
 DISCONNECTED_TURN_SECONDS = 20.0
 DISCONNECT_GRACE_SECONDS = 300.0
-AWAY_TURN_SECONDS = 4.0
-TIMEOUTS_BEFORE_AWAY = 2
+#: Consecutive missed turns after which a connected player is removed from the table.
+TIMEOUTS_BEFORE_KICK = 2
+KICK_REASON = "Dvakrát po sobě jsi nestihl tah, proto tě hra od stolu odebrala."
+LONG_DISCONNECT_REASON = "Byl jsi příliš dlouho odpojen, proto tě hra od stolu odebrala."
 BOT_NAMES = ("Anča", "Béďa", "Cyril", "Dana")
 
 
@@ -90,7 +95,6 @@ class Seat:
     is_bot: bool = False
     connected: bool = False
     ready: bool = False
-    away: bool = False
     timeouts: int = 0
     money: int = 0  # units of the base stake
     pb: int = 0
@@ -106,7 +110,6 @@ class Seat:
         self.is_bot = False
         self.connected = False
         self.ready = False
-        self.away = False
         self.timeouts = 0
         self.money = 0
         self.pb = 0
@@ -134,6 +137,8 @@ class Table:
     log: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=LOG_SIZE))
     history: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=HISTORY_SIZE))
     version: int = 0
+    #: Players removed from the table, with the reason: drained by the server.
+    departures: list[tuple[str, str]] = field(default_factory=list)
     wall_clock: Callable[[], float] = time.time  # timestamps shown in the log
     _seq: int = 0
     _deck: list[str] | None = None
@@ -191,24 +196,31 @@ class Table:
             self.spectators.add(player_id)
             self._touch(now)
 
-    def leave(self, player_id: str, now: float) -> None:
-        """A player gets up.  Mid-deal a computer finishes the hand for them."""
+    def leave(self, player_id: str, now: float, *, removed: str | None = None) -> None:
+        """A player gets up, or is removed (``removed`` = the reason shown to him).
+
+        Mid-deal a computer finishes the hand for the departed player.
+        """
         self.spectators.discard(player_id)
         seat = self.seat_of(player_id)
         if seat is None:
             return
         name = seat.name
+        if removed is not None:
+            self.departures.append((player_id, removed))
+            what = f"{name} byl od stolu odebrán"
+        else:
+            what = f"{name} odešel od stolu"
         if self.status == "playing" and seat.index in self.role_seats:
             seat.player_id = None
             seat.is_bot = True
             seat.connected = False
-            seat.away = False
             seat.name = f"Počítač (za {name})"
-            self._say(f"{name} odešel od stolu, hru za něj dohraje počítač.", now)
+            self._say(f"{what}, hru za něj dohraje počítač.", now)
             self._schedule_turn(now)
         else:
             seat.clear()
-            self._say(f"{name} odešel od stolu.", now)
+            self._say(f"{what}.", now)
             if self.status == "between" and not self.full:
                 self.status = "waiting"
                 self.next_deal_at = None
@@ -221,7 +233,6 @@ class Table:
         seat.connected = connected
         seat.disconnected_at = None if connected else now
         if connected:
-            seat.away = False
             seat.timeouts = 0
         self._say(f"{seat.name} se {'připojil zpět' if connected else 'odpojil'}.", now)
         if self.status == "playing":
@@ -334,7 +345,6 @@ class Table:
         if self.status != "playing" or self.deal is None or role is None:
             raise TableError("no_deal", "Teď se nehraje.")
         self._apply(role, action)
-        seat.away = False
         seat.timeouts = 0
         self._after_action(now)
 
@@ -391,8 +401,6 @@ class Table:
             self.deadline = now + pause
         elif not seat.connected:
             self.deadline = now + DISCONNECTED_TURN_SECONDS
-        elif seat.away:
-            self.deadline = now + AWAY_TURN_SECONDS
         elif self.options.turn_seconds:
             self.deadline = now + self.options.turn_seconds
         else:
@@ -407,13 +415,20 @@ class Table:
             deal = self.deal
             assert deal is not None and deal.turn is not None
             role = deal.turn
-            if not seat.is_bot:
+            kick: str | None = None
+            if seat.player_id is not None and seat.connected:
+                # A disconnected player keeps his seat for a grace period instead.
                 seat.timeouts += 1
-                if seat.connected and seat.timeouts >= TIMEOUTS_BEFORE_AWAY and not seat.away:
-                    seat.away = True
-                    self._say(f"{seat.name} nereaguje, hraje za něj počítač.", now)
-            self._apply(role, bot.choose_action(deal, role, self.rng))
+                if seat.timeouts >= TIMEOUTS_BEFORE_KICK:
+                    kick = seat.player_id
+            try:
+                self._apply(role, bot.choose_action(deal, role, self.rng))
+            except TableError:
+                log.exception("bot move rejected at table %s; using the fallback", self.id)
+                self._apply(role, bot.fallback_action(deal, role))
             self._after_action(now)
+            if kick is not None:
+                self.leave(kick, now, removed=KICK_REASON)
             return True
         if self.status == "between" and self.next_deal_at is not None and now >= self.next_deal_at:
             if self.full and any(s.connected for s in self.humans):
@@ -435,21 +450,9 @@ class Table:
                 and seat.disconnected_at is not None
                 and now - seat.disconnected_at > DISCONNECT_GRACE_SECONDS
             ):
-                self.leave(seat.player_id, now)
+                self.leave(seat.player_id, now, removed=LONG_DISCONNECT_REASON)
                 changed = True
         return changed
-
-    def back(self, player_id: str, now: float) -> None:
-        """A player who was marked as away takes the cards back."""
-        seat = self.seat_of(player_id)
-        if seat is None or not seat.away:
-            return
-        seat.away = False
-        seat.timeouts = 0
-        self._say(f"{seat.name} je zpět.", now)
-        if self.seat_on_turn() is seat:
-            self._schedule_turn(now)
-        self._touch(now)
 
     def next_wakeup(self) -> float | None:
         if self.status == "playing":
@@ -584,6 +587,16 @@ class Table:
             if event.get("hlaska"):
                 text += f" – hlásí {event['hlaska']}"
             return text + "."
+        if kind == "laid_down":
+            if event["game"] == "dve_sedmy" and "missing" in event:
+                return f"{name} nemá obě hlášené sedmy – dvě sedmy prohrává (ložená hra)."
+            if event["game"] == "dve_sedmy":
+                return (
+                    f"Ložená hra: {name} má {event['theirs']} pomocných proti "
+                    f"{event['mine']} aktérovým – dvě sedmy nemohou vyjít."
+                )
+            game = "betl" if event["game"] == "betl" else "durch"
+            return f"{name} pokládá karty: {game} je ložený a nemůže prohrát."
         if kind == "trick":
             winner = self.seats[self.role_seats[event["winner"]]].name
             return f"Štych bere {winner}."
@@ -642,7 +655,6 @@ class Table:
                     "bot": s.is_bot,
                     "connected": s.connected or s.is_bot,
                     "ready": s.ready,
-                    "away": s.away,
                     "money": s.money,
                     "pb": s.pb,
                 }

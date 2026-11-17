@@ -108,7 +108,10 @@ def random_action(deal: Deal, role: int, rng: random.Random) -> dict:
         (ctype, red), _ = rng.choice(choices)
         trump = helper = None
         if ctype not in (ContractType.BETL, ContractType.DURCH):
-            trump = "h" if red else rng.choice([s for s in SUITS if s != "h"])
+            suits = ["h"] if red else [s for s in SUITS if s != "h"]
+            if ctype in (ContractType.SEDMA, ContractType.STO_SEDMA) and rng.random() < 0.9:
+                suits = [s for s in suits if f"{s}7" in hand] or suits  # mostly sensible
+            trump = rng.choice(suits)
             if ctype in (ContractType.DVE_SEDMY, ContractType.DVE_SEDMY_STO):
                 helper = rng.choice([s for s in SUITS if s != trump])
         return {

@@ -313,7 +313,6 @@ export class TableView {
       if (state.dealer === seat.index) badges.push([state.seats.length === 4 ? 'rozdával, pauzíruje' : 'rozdával', '']);
     }
     if (!seat.connected) badges.push(['odpojen', 'warn']);
-    else if (seat.away) badges.push(['hraje za něj počítač', 'warn']);
     if (state.status !== 'playing' && seat.ready && !seat.bot) badges.push(['připraven', 'ok']);
 
     const onTurn = state.turn_seat === seat.index;
@@ -412,16 +411,6 @@ export class TableView {
     replace(this.actions);
     if (state.status !== 'playing' || !deal) return;
     const options = deal.options;
-    const me = state.seats[this.viewSeat];
-
-    if (me.away && state.you.seat !== null) {
-      append(
-        this.actions,
-        h('p', null, 'Dlouho jsi nehrál, tahy za tebe dělá počítač.'),
-        h('button.primary', { type: 'button', onclick: () => this.sendMessage({ type: 'back' }) }, 'Hraju zase sám'),
-      );
-      return;
-    }
     if (!options) {
       const turn = state.turn_seat === null ? '' : `Na tahu je ${this.#seatName(state.turn_seat)}.`;
       append(this.actions, h('p.waiting', null, turn));
@@ -445,15 +434,38 @@ export class TableView {
       );
       return;
     }
-    const levels = [];
-    if (options.can_bid) {
-      for (let level = options.min_level; level <= options.max_level; level += 1) levels.push(level);
-    }
-    append(
+    const holder = this.#roleName(deal.bidding.holder);
+    const offered = deal.bidding.level
+      ? `Drží se ${LEVEL_NAMES[deal.bidding.level]}, musíš nabídnout víc.`
+      : 'Zatím nikdo nic nenabídl.';
+    if (!options.can_bid) {
+      append(
         this.actions,
-      h('p', null, `Licituješ proti hráči ${this.#roleName(deal.bidding.holder)}. Nabídni stupeň, nebo pasuj.`),
-      h('div.buttons.wrap', null,
-        levels.map((level, i) => h(`button.${i === 0 ? 'primary' : 'ghost'}`, { type: 'button', onclick: () => this.#act({ a: 'bid', level }) }, LEVEL_NAMES[level])),
+        h('p', null, `${holder} drží nejvyšší stupeň. Zbývá jen pasovat.`),
+        h('div.buttons', null, h('button.ghost.pass', { type: 'button', onclick: () => this.#act({ a: 'pass' }) }, 'Pas')),
+      );
+      return;
+    }
+    // Keep the player's choice across re-renders; start at the lowest possible step.
+    if (!this.ui.bidLevel || this.ui.bidLevel < options.min_level) this.ui.bidLevel = options.min_level;
+    const select = h(
+      'select.bid-select',
+      {
+        'aria-label': 'Licitační stupeň',
+        onchange: (event) => { this.ui.bidLevel = Number(event.currentTarget.value); },
+      },
+      LEVEL_NAMES.slice(1).map((name, i) => h(
+        'option',
+        { value: String(i + 1), disabled: i + 1 < options.min_level, selected: i + 1 === this.ui.bidLevel },
+        `${i + 1}. ${name}`,
+      )),
+    );
+    append(
+      this.actions,
+      h('p', null, `Licituješ proti hráči ${holder}. ${offered}`),
+      h('div.buttons', null,
+        select,
+        h('button.primary', { type: 'button', onclick: () => this.#act({ a: 'bid', level: Number(select.value) }) }, 'Nabídnout'),
         h('button.ghost.pass', { type: 'button', onclick: () => this.#act({ a: 'pass' }) }, 'Pas')),
     );
   }
@@ -477,7 +489,9 @@ export class TableView {
     if (level < options.min_level) return `Musíš ohlásit aspoň: ${LEVEL_NAMES[options.min_level]}.`;
     if (discards.size !== 2) return 'Vyber v ruce dvě karty do talonu.';
     const hand = this.state.deal.hand;
-    if (type === 'sedma' && !hand.includes(`${trump}7`)) return 'Sedmu nelze hrát bez trumfové sedmy v ruce.';
+    if ((type === 'sedma' || type === 'sto_sedma') && !hand.includes(`${trump}7`)) {
+      return 'Sedmu nelze hrát bez trumfové sedmy v ruce.';
+    }
     for (const card of discards) {
       if (spec.trump && 'AX'.includes(card[1])) return 'Esa a desítky smí do talonu jen při betlu a durchu.';
       if (spec.trump && card[1] === '7' && type !== 'sto' && (card[0] === trump || (spec.helper && card[0] === helper))) {
@@ -534,6 +548,9 @@ export class TableView {
           ? h('button.ghost', { type: 'button', onclick: () => { if (window.confirm('Složit karty? Zaplatíš každému flekovanou hru a sedmu.')) this.#act({ a: 'omyl' }); } }, 'Složit karty (omyl)')
           : null,
         problem ? h('span.problem', null, problem) : null),
+      !problem && spec?.helper && (!this.state.deal.hand.includes(`${ui.trump}7`) || !this.state.deal.hand.includes(`${ui.helper}7`))
+        ? h('p.problem', null, 'Pozor: nemáš obě sedmy. Dvě sedmy tak hned prohraješ.')
+        : null,
     );
   }
 
@@ -543,9 +560,15 @@ export class TableView {
     const title = word.charAt(0).toUpperCase() + word.slice(1);
     const subsets = options.parts.map((part) => [part]);
     if (options.parts.length === 2) subsets.push([...options.parts]);
-    const question = options.stage === 1
-      ? `${this.#roleName(deal.declarer)} hlásí ${deal.contract.name}. Věříš mu?`
-      : `Soupeř dal ${FLEK_WORDS[options.stage - 2]}. Zvýšíš na ${word}?`;
+    let question;
+    if (options.partner && options.partner.length) {
+      const done = options.partner.map((part) => PART_ACC[part]).join(' a ');
+      question = `Spoluhráč dal ${word} na ${done}. Přidáš ${word} i na zbytek?`;
+    } else if (options.stage === 1) {
+      question = `${this.#roleName(deal.declarer)} hlásí ${deal.contract.name}. Věříš mu?`;
+    } else {
+      question = `Soupeř dal ${FLEK_WORDS[options.stage - 2]}. Zvýšíš na ${word}?`;
+    }
     append(
         this.actions,
       h('p', null, question),
@@ -739,8 +762,16 @@ export class TableView {
 
     const notes = [];
     if (result.outcome === 'approved') notes.push('Sedma bez fleku na sedmu a bez re na hru se nesehrává.');
-    if (result.outcome === 'four_helpers') notes.push('Obránce držel čtyři a více pomocných, dvě sedmy se nesehrávají.');
-    if (result.outcome === 'missing_seven') notes.push('Aktér neměl obě hlášené sedmy.');
+    for (const [part, info] of Object.entries(deal.laid_down || {})) {
+      if (part === 'dve_sedmy' && info.missing) {
+        notes.push('Ložená hra: aktér neměl obě hlášené sedmy.');
+      } else if (part === 'dve_sedmy') {
+        notes.push(`Ložená hra: ${this.#roleName(info.p)} měl ${info.theirs} pomocných proti ${info.mine} aktérovým, pomocná sedma by vždy padla.`);
+      } else {
+        const after = info.tricks ? ` po ${info.tricks}. štychu` : ' hned na začátku';
+        notes.push(`Ložená hra: ${part} nemohl prohrát, aktér položil karty${after}.`);
+      }
+    }
     if (result.declarer_points !== null) {
       notes.push(`Body: ${declarer} ${result.declarer_points}, obrana ${result.defence_points}.`);
     }

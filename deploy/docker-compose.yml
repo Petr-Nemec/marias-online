@@ -10,6 +10,9 @@ services:
     environment:
       MARIAS_ALLOWED_ORIGINS: "https://${MARIAS_DOMAIN:?set MARIAS_DOMAIN}"
       MARIAS_HSTS: "true"
+      # Shown in the privacy notice; set them in deploy/.env.
+      MARIAS_OPERATOR: "${MARIAS_OPERATOR:-}"
+      MARIAS_CONTACT: "${MARIAS_CONTACT:-}"
       # The app is not published; only Caddy on the private network reaches it,
       # so X-Forwarded-For can be trusted from any peer there.
       FORWARDED_ALLOW_IPS: "*"

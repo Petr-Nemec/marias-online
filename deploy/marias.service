@@ -20,6 +20,8 @@ Environment=MARIAS_HOST=127.0.0.1
 Environment=MARIAS_PORT=8000
 Environment=MARIAS_ALLOWED_ORIGINS=https://marias.example.cz
 Environment=MARIAS_HSTS=true
+Environment="MARIAS_OPERATOR=Jméno Příjmení"
+Environment=MARIAS_CONTACT=kontakt@example.cz
 ExecStart=/opt/marias/.venv/bin/python -m marias.server
 Restart=on-failure
 RestartSec=3

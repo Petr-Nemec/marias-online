@@ -79,6 +79,8 @@ Postup je v hlavičce [deploy/marias.service](deploy/marias.service), konfigurac
 | `MARIAS_MAX_CONNECTIONS_PER_IP` | `10` | nejvýš spojení z jedné IP adresy |
 | `MARIAS_SESSION_TTL` | `86400` | jak dlouho (s) přežije identita hosta bez připojení |
 | `MARIAS_LOG_LEVEL` | `INFO` | úroveň logování |
+| `MARIAS_OPERATOR` | *(prázdné)* | správce osobních údajů uvedený v Ochraně soukromí (jméno nebo název) |
+| `MARIAS_CONTACT` | *(prázdné)* | kontakt na správce, např. e-mail, uvedený v Ochraně soukromí |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | adresy proxy, jejichž `X-Forwarded-For` se věří (Uvicorn) |
 
 Stav serveru: `GET /healthz`.
@@ -119,5 +121,6 @@ deploy/                    Docker Compose + Caddy, nginx, systemd
 
 ## Licence
 
-GNU AGPL v3 (viz [LICENSE](LICENSE)). Písmo Bitter je pod SIL Open Font License
+Proprietární software, všechna práva vyhrazena (viz [LICENSE](LICENSE)). Bez písemného svolení
+autora není dovoleno kód používat, šířit ani provozovat. Písmo Bitter je pod SIL Open Font License
 ([marias/web/fonts/OFL-Bitter.txt](marias/web/fonts/OFL-Bitter.txt)).

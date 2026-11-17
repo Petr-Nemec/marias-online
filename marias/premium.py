@@ -28,11 +28,12 @@ or cannot be judged by software and are not handled.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from .cards import SUITS, Card, strength
+from .cards import SUITS, Card
 from .contracts import ContractType, Part
+from .rules import betl_catching_cards, durch_suit_is_solid
 
 if TYPE_CHECKING:
     from .deal import Deal
@@ -220,56 +221,39 @@ def _strong_two_sevens(twelve: Sequence[Card], trump: str | None, helpers: Seque
     return top_trumps and len(helpers) >= 6 and other_aces
 
 
-def betl_catching_cards(cards: Iterable[Card]) -> list[Card]:
-    """Cards of one suit that can be forced to win a trick in a betl."""
-    held = sorted(cards, key=lambda c: strength(c, plain=True))
-    own = {strength(c, plain=True) for c in held}
-    catching = []
-    for below, card in enumerate(held):
-        value = strength(card, plain=True)
-        outstanding_lower = sum(1 for v in range(value) if v not in own)
-        if outstanding_lower > below:
-            catching.append(card)
-    return catching
-
-
 def _betl_criteria(deal: Deal) -> list[Criterion]:
     assert deal.declarer is not None
     hand = deal.play_hands[deal.declarer]
+    outstanding = _defence_cards(deal)
     first_lead = deal.tricks[0].cards[0] if deal.tricks else None
     criteria: list[Criterion] = []
     for suit in SUITS:
         cards = [c for c in hand if c[0] == suit]
-        ace = f"{suit}A" in cards
-        if len(cards) >= 6:
-            catching = betl_catching_cards(cards)
-            if len(catching) == 1:
-                if catching[0] != first_lead:  # footnote 2: not when it was simply led away
-                    criteria.append(("betl: šesterák s jednou chytající kartou", 5, 5))
-                continue
-        if ace:
+        catching = betl_catching_cards(cards, outstanding)
+        if len(cards) >= 6 and len(catching) == 1:
+            if catching[0] != first_lead:  # footnote 2: not when it was simply led away
+                criteria.append(("betl: šesterák s jednou chytající kartou", 5, 5))
+            continue
+        if f"{suit}A" in catching:
             criteria.append(("betl: chytající eso", 10, 10))
     return criteria
 
 
-def durch_suit_is_solid(own: Iterable[Card], outstanding: Iterable[Card]) -> bool:
-    """Can the holder never lose a trick in the suit when leading it from the top?"""
-    mine = sorted((strength(c, plain=True) for c in own), reverse=True)
-    theirs = sorted((strength(c, plain=True) for c in outstanding), reverse=True)
-    if not mine or not theirs:
-        return True
-    return not any(theirs[0] > mine[i] for i in range(min(len(mine), len(theirs))))
+def _defence_cards(deal: Deal) -> list[Card]:
+    """The defenders' cards at the start of play (the talon is out of play)."""
+    return [c for d in deal.defenders for c in deal.play_hands[d]]
 
 
 def _durch_criteria(deal: Deal) -> list[Criterion]:
     assert deal.declarer is not None
     hand = deal.play_hands[deal.declarer]
+    defence = _defence_cards(deal)
     criteria: list[Criterion] = []
     for suit in SUITS:
         own = [c for c in hand if c[0] == suit]
         if not own:
             continue
-        outstanding = [f"{suit}{r}" for r in "789XJQKA" if f"{suit}{r}" not in own]
+        outstanding = [c for c in defence if c[0] == suit]
         if not durch_suit_is_solid(own, outstanding):
             criteria.append(("durch: barva, která není ložená", 10, 10))
     return criteria

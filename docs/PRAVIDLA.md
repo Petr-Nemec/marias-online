@@ -51,7 +51,10 @@ Licitační žebříček (číslo = stupeň):
   (u „červených“ stupňů jsou trumfy červené).
 - Esa a desítky smí do talonu jen při betlu a durchu. Hlášenou sedmu (trumfovou, u dvou sedem
   i pomocnou) do talonu odložit nelze.
-- Sedmu nelze ohlásit bez trumfové sedmy v ruce.
+- Sedmu ani sto a sedmu nelze ohlásit bez trumfové sedmy v ruce (vždy zbývá jiný závazek na
+  vylicitovaném nebo vyšším stupni: sto, betl, durch).
+- Dvě sedmy lze ohlásit i bez obou sedem, protože od stupně 9 výš jiný závazek není. Takové dvě sedmy
+  jsou ihned prohrané (ložená hra, viz oddíl 8); u dvou sedem a sta se sehraje sto.
 - **Omyl**: kdo vylicitoval jen obyčejnou sedmu (stupeň 1, i když hraje z povinnosti), smí karty
   složit. Platí každému flekovanou hru a flekovanou sedmu, tj. 2 + 4 = **6 násobků základu**.
 
@@ -61,13 +64,14 @@ Licitační žebříček (číslo = stupeň):
   sazbu zdvojnásobí. Víc stupňů není.
 - Flekuje se zvlášť každá část závazku: hra a sedma, sto a sedma, sto, betl, durch, dvě sedmy,
   dvě sedmy a sto. Na flek obrany může aktér dát re jen na tu část, která byla fleknuta, a tak dál.
-- V kole obrany se ptá nejprve hráč po aktérovi, pak druhý obránce; flek kteréhokoli z nich platí
-  pro celou obranu.
+- V kole obrany se ptá nejprve první obránce (hráč po aktérovi), pak druhý obránce a teprve potom
+  aktér. Druhý obránce může fleknout jen to, co první nechal bez fleku (u sedmy například první
+  flekne hru a druhý sedmu); když první fleknul všechno, druhý se vůbec neptá. Flek kteréhokoli
+  obránce platí za celou obranu.
 - **Sedma se sehrává, jen když obrana dala flek na sedmu, nebo aktér dal re na hru.** Jinak se
   nesehrává: nefleknutá hra i sedma se aktérovi vyplatí, hra fleknutá bez re se počítá jako
   prohraná (aktér platí flekovanou hru) a sedma jako vyhraná.
-- Dvě sedmy: má-li některý obránce v ruce **čtyři a více pomocných**, dvě sedmy se nesehrávají
-  a aktér je platí. U dvou sedem a sta se hra sehrává kvůli stu a dvě sedmy jsou prohrané.
+- Dvě sedmy se po flecích mohou skončit jako ložená hra (oddíl 8).
 
 ## 5. Sehrávka (`rules.py`)
 
@@ -101,7 +105,9 @@ Sazby v násobcích základu (soutěžně 0,20 Kč):
 
 - Červené trumfy zdvojnásobují všechny sazby trumfových závazků (včetně tiché sedmy).
 - Každý flek sazbu dané části zdvojnásobí. Částky se platí každým obráncem (a pauzírujícím).
-- **Hra** (v závazku sedma): vyhrává strana s **více** body; při rovnosti aktér prohrává.
+- **Hra** (v závazku sedma): vyhrává strana s **více** body. Nerozhodně skončit nemůže: karty dávají
+  90 bodů (lichý počet desítek) a hlášky jen sudé desítky, takže součet obou stran je vždy lichý
+  počet desítek.
 - **Tiché sto**: dosáhne-li kterákoli strana ve hře 100 a více bodů (počítají se všechny hlášky),
   sazba hry se zdvojnásobí a vítězná strana dostane dvojnásobnou hru ještě za každých dalších
   10 bodů nad sto. Vzorec: `hra × 2 × (1 + (body − 100) / 10)`.
@@ -127,25 +133,59 @@ Splní-li hra víc kritérií, sčítají se, ale jen nejvyšší z nich se poč
 - **Sto** podle počtu trumfů a toho, zda aktér měl trumfové eso a desítku, s příplatkem za sto
   s netrumfovou hláškou; sto na pět nebo šest trumfů bez obou ostrých.
 - **Dvě sedmy** podle počtu trumfů (2–4) a pomocných (4), vyšší hodnoty se stem, příplatek bez
-  trumfového esa, výjimky z poznámek 4 a 5 tabulky.
-- **Betl**: chytající eso 10, šesterák s jedinou chytající kartou 5 (ne, byla-li tato karta hned
-  vynesena prvním výnosem).
+  trumfového esa, výjimky z poznámek 4 a 5 tabulky. Vyhraje-li aktér dvě sedmy s méně než čtyřmi
+  pomocnými (obrana chybovala), dostane body jako za čtyři pomocné.
+- **Betl**: 10 za každé chytající eso; 5 za šesteráka (šest a více karet jedné barvy) s jedinou
+  chytající kartou, ne však, byla-li tato karta hned vynesena prvním výnosem. Šesterák se nepočítá
+  zároveň jako chytající eso.
 - **Durch**: 10 za každou barvu, která není ložená.
 - **Úspěšný flek na betl** se dvěma nebo třemi barvami v ruce: 5. **Úspěšný flek na durch**
   s chytajícími kartami nejvýš ve dvou barvách (ne jen se dvěma esy): 10.
 
 Posouzení „chytající karty“ a „ložené barvy“ tabulka ponechává na hráčích. Program je proto
-počítá pevným vzorcem:
+počítá pevným vzorcem (`marias/rules.py`). Karty odložené do talonu jsou ze hry a nepočítají se
+nikomu; posuzuje se rozdání na začátku sehrávky.
 
-- karta je při betlu **chytající**, má-li soupeř pod ní více karet její barvy, než kolik jich má
-  aktér pod ní (aktér ji pak nemůže vždy „podlézt“);
-- barva je při durchu **ložená**, nemůže-li v ní aktér ztratit štych, ani kdyby všechny chybějící
-  karty barvy držel jediný obránce.
+- **Chytající karta (betl)**: karta aktéra je chytající, drží-li obrana (kterýkoli obránce) aspoň
+  jednu nižší kartu téže barvy, v přirozeném pořadí 7, 8, 9, 10, spodek, svršek, král, eso.
+  Důvod: obránce tu nižší kartu vynese a aktér ji podle povinnosti přebíjet musí přebít, má-li čím.
+  Příklad: aktér 7 a 9, obrana 8 → devítka je chytající.
+- **Ložená barva (durch)**: seřaď aktérovy karty barvy sestupně a₁ > a₂ > …, nejvyšší kartu barvy
+  u obrany označ o, počet obráncových karet barvy m. Barva je ložená, platí-li aᵢ > o pro všechna
+  i = 1 … min(počet aktérových karet, m). Vychází to z nejhoršího případu, kdy všechny zbývající
+  karty barvy drží jediný obránce a svou nejvyšší si šetří. Barva, ve které obrana nemá nic, je
+  ložená. Příklad: aktér eso a svršek, obrana král a sedma → neložená (svršek prohraje s králem);
+  aktér eso a svršek, obrana jen král → ložená (král padne pod eso).
+- **Chytající barva obránce (flek na durch)**: barva, ve které by tento obránce sám aktéra chytil,
+  tj. aktérova barva není ložená proti obráncovým kartám této barvy.
 
-## 8. Co program nedělá
+## 8. Ložená hra
 
-- **Ložená hra** (vyložení karet a prohlášení výsledku bez dohrání) se nepoužívá, hra se vždy
-  dohraje; betl, durch a dvě sedmy končí automaticky, jakmile je o nich rozhodnuto.
+Program hru ukončí bez dohrání („položí karty“) jen v těchto případech. Ve všech ostatních se hra
+dohraje; betl končí prvním štychem aktéra, durch prvním štychem obrany a dvě sedmy prvním porušením.
+
+1. **Dvě sedmy, obrana flekovala dvě sedmy.** Po skončení fleků: má-li některý obránce aspoň tolik
+   karet pomocné barvy jako aktér (počítají se karty v ruce po odložení do talonu), jsou dvě sedmy
+   prohrané. Každá pomocná karta je vyšší než pomocná sedma a každé kolo pomocné barvy vytáhne
+   z ruky obránce nejvýš jednu kartu, takže pomocná sedma vždy padne. Typicky obránce se čtyřmi
+   pomocnými proti aktérovým čtyřem, nebo aktér s méně než čtyřmi pomocnými.
+   Bez fleku na dvě sedmy se hraje normálně (obrana si rozložení nemusí všimnout).
+   U dvou sedem a sta se dál sehraje sto.
+2. **Dvě sedmy bez obou sedem** v aktérově ruce: prohrané hned po flecích, bez ohledu na fleky.
+3. **Betl**: před každým štychem (i před prvním) program zkontroluje, zda aktér nemá žádnou
+   chytající kartu (oddíl 7) vůči kartám, které obraně zbývají. Pokud ne, betl nemůže prohrát a je
+   vyhraný. Před prvním štychem, kdy aktér vynáší, musí navíc mít kartu v barvě, kterou má
+   i obrana (jinak by vlastním výnosem štych vzal).
+4. **Durch**: před každým štychem, kdy je aktér na výnosu, program zkontroluje, zda jsou všechny
+   jeho barvy ložené (oddíl 7) vůči kartám, které obraně zbývají. Pokud ano, durch nemůže prohrát
+   a je vyhraný.
+
+Kontroly 3 a 4 vycházejí jen z toho, co aktér ví: neznámé karty obrany mohou být rozložené
+jakkoli. Program tedy hru položí jen tehdy, když by ji aktér u skutečného stolu mohl položit sám.
+Závazky na body (sedma, sto, sto a sedma) se vždy dohrávají.
+
+## 9. Co program nedělá
+
 - Sankce za renonc, chybné rozdání a podobné procesní chyby nejsou potřeba, protože je program
   nedovolí.
 - Prémiové body se zapisují na lístek stolu; soutěžní tabulky turnajů program nevede.

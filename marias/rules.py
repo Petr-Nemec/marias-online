@@ -93,3 +93,34 @@ def _respect_announced_sevens(
     # A hand made up solely of locked sevens and their suit-mates always keeps a
     # playable card, but never leave the player without a move.
     return allowed or candidates
+
+
+def betl_catching_cards(own: Collection[Card], outstanding: Collection[Card]) -> list[Card]:
+    """Declarer's cards that the defence can catch in a betl („chytající karty“).
+
+    A card is catching when the defence holds at least one lower card of its suit
+    (natural order).  Because a player must beat the trick whenever he can, the
+    defence leads that lower card and the declarer has to go over it.  Cards that
+    are out of play (discarded to the talon, already played) are not outstanding.
+    """
+    catching = []
+    for card in own:
+        value = strength(card, plain=True)
+        if any(o[0] == card[0] and strength(o, plain=True) < value for o in outstanding):
+            catching.append(card)
+    return catching
+
+
+def durch_suit_is_solid(own: Collection[Card], outstanding: Collection[Card]) -> bool:
+    """Is a suit „ložená“ in a durch: no trick can be lost in it?
+
+    The test assumes one defender holds all outstanding cards of the suit and keeps
+    his highest card as long as possible.  Leading from the top, each of the
+    declarer's first n cards (n = the smaller of the two counts) must beat that
+    highest outstanding card.
+    """
+    mine = sorted((strength(c, plain=True) for c in own), reverse=True)
+    theirs = sorted((strength(c, plain=True) for c in outstanding), reverse=True)
+    if not mine or not theirs:
+        return True
+    return all(mine[i] > theirs[0] for i in range(min(len(mine), len(theirs))))

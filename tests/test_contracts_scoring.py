@@ -97,8 +97,8 @@ def test_full_doubling_sequence_flek_re_tutti_boty():
         deal.flek(FORHONT, [Part.STO])  # only the declarer answers a flek
     deal.flek(REAR, [Part.STO])
     assert deal.turn == FORHONT and deal.options(FORHONT)["name"] == "tutti"
-    deal.flek(FORHONT, [Part.STO])
-    deal.flek(MIDDLE, [])
+    deal.flek(FORHONT, [Part.STO])  # tutti; the partner has nothing left to double
+    assert deal.turn == REAR
     deal.flek(REAR, [Part.STO])  # boty – the last possible step
     assert deal.phase is Phase.PLAY
     assert deal.flek_counts == {Part.STO: 4}
@@ -246,15 +246,30 @@ def test_lost_sto_pays_missing_tens_and_defence_marriages():
 # ------------------------------------------------------------ betl, durch
 
 
-def test_betl_won_with_lowest_cards():
+def test_betl_with_no_catching_card_is_laid_down_at_once():
     low = cards("h7 l7 b7 a7 h8 l8 b8 a8 h9 l9")
     deal = deal_with(rear=low, talon=cards("b9 a9"))
     win_auction(deal, REAR, 7)
     declare(deal, Contract(ContractType.BETL), ["b9", "a9"])
     approve_all(deal)
-    assert deal.leader == REAR  # the declarer leads in betl
-    play_out(deal, random.Random(2))
-    assert deal.result.units == 15 and len(deal.tricks) == 10
+    assert deal.outcome is Outcome.LAID_DOWN and not deal.tricks
+    assert deal.laid_down[Part.BETL][0] is True
+    assert deal.result.units == 15 and deal.result.parts[0].note == "ložený"
+
+
+def test_betl_becomes_laid_down_once_the_catching_card_is_gone():
+    # hX is catching while the defence holds h9 (natural order 7 8 9 10).
+    hand = cards("h7 h8 hX l7 l8 l9 b7 b8 a7 a8")
+    deal = deal_with(rear=hand, forhont=cards("h9"), talon=cards("b9 a9"))
+    win_auction(deal, REAR, 7)
+    declare(deal, Contract(ContractType.BETL), ["b9", "a9"])
+    approve_all(deal)
+    assert deal.phase is Phase.PLAY and not deal.laid_down
+    play_scripted(deal, cards("hX h8 h7 l9 l8 l7 b8 b7 a8 a7"))
+    assert deal.phase is Phase.DONE
+    if deal.outcome is Outcome.LAID_DOWN:
+        assert "h9" in [c for t in deal.tricks for c in t.cards]
+        assert deal.result.units == 15
 
 
 def test_durch_ends_with_the_first_lost_trick():
@@ -262,8 +277,7 @@ def test_durch_ends_with_the_first_lost_trick():
     deal = deal_with(rear=low, talon=cards("b9 a9"))
     win_auction(deal, REAR, 8)
     declare(deal, Contract(ContractType.DURCH), ["b9", "a9"])
-    deal.flek(FORHONT, [Part.DURCH])
-    deal.flek(MIDDLE, [])
+    deal.flek(FORHONT, [Part.DURCH])  # the partner is not asked: nothing is left
     deal.flek(REAR, [])
     play_out(deal)
     assert deal.phase is Phase.DONE and len(deal.tricks) == 1
@@ -289,7 +303,8 @@ def test_two_sevens_won():
     assert deal.result.pb == {FORHONT: 20}  # „na 4 pomocné“ with the lead
 
 
-def test_two_sevens_against_four_helpers_with_raised_limit():
+def two_sevens_four_helpers():
+    """Zadák plays dvě sedmy, hearts trumps, leaves helper; forhont holds the other four leaves."""
     deal = deal_with(
         rear=cards("h7 hA hX hK hQ hJ h9 l7 lA lX"),
         forhont=cards("lK lQ lJ l9"),
@@ -297,39 +312,154 @@ def test_two_sevens_against_four_helpers_with_raised_limit():
     )
     win_auction(deal, REAR, 11)
     declare(deal, Contract(ContractType.DVE_SEDMY, "h", "l"), ["h8", "l8"])
+    return deal
+
+
+def test_two_sevens_laid_down_when_the_defence_doubles():
+    deal = two_sevens_four_helpers()
     deal.flek(FORHONT, [Part.DVE_SEDMY])
+    deal.flek(REAR, [])  # the second defender is skipped: nothing is left to double
+    assert deal.outcome is Outcome.LAID_DOWN and not deal.tricks
+    won, details = deal.laid_down[Part.DVE_SEDMY]
+    assert not won and details == {"game": "dve_sedmy", "p": FORHONT, "theirs": 4, "mine": 3}
+    assert deal.result.units == -40 * 2 * 2  # red, one flek
+    assert "4 pomocných" in deal.result.parts[0].note
+
+
+def test_two_sevens_are_played_when_the_defence_does_not_double():
+    deal = two_sevens_four_helpers()
+    approve_all(deal)
+    assert deal.phase is Phase.PLAY and not deal.laid_down
+
+
+def test_two_sevens_with_fewer_helpers_than_a_defender():
+    # The declarer holds only l7 and lA; a defender has three leaves.
+    deal = deal_with(
+        rear=cards("h7 hA hX hK hQ hJ h9 h8 l7 lA"),
+        middle=cards("lK lQ lJ"),
+        talon=cards("b7 a7"),
+    )
+    win_auction(deal, REAR, 11)
+    declare(deal, Contract(ContractType.DVE_SEDMY, "h", "l"), ["b7", "a7"])
+    deal.flek(FORHONT, [])
     deal.flek(MIDDLE, [Part.DVE_SEDMY])
-    deal.flek(REAR, [Part.DVE_SEDMY])
+    deal.flek(REAR, [])
+    assert deal.outcome is Outcome.LAID_DOWN
+    assert deal.laid_down[Part.DVE_SEDMY][1]["mine"] == 2
+
+
+def test_two_sevens_and_sto_still_play_the_sto():
+    deal = deal_with(
+        rear=cards("h7 hA hX hK hQ hJ h9 l7 lA lX"),
+        forhont=cards("lK lQ lJ l9"),
+        talon=cards("h8 l8"),
+    )
+    win_auction(deal, REAR, 12)
+    declare(deal, Contract(ContractType.DVE_SEDMY_STO, "h", "l"), ["h8", "l8"])
     deal.flek(FORHONT, [Part.DVE_SEDMY])
     deal.flek(MIDDLE, [])
-    deal.flek(REAR, [Part.DVE_SEDMY])
-    assert deal.outcome is Outcome.FOUR_HELPERS and not deal.tricks
+    deal.flek(REAR, [])
+    assert deal.phase is Phase.PLAY and Part.DVE_SEDMY in deal.laid_down
+    play_out(deal)
+    sevens = next(p for p in deal.result.parts if p.part == "dve_sedmy")
+    assert not sevens.won and sevens.note.startswith("ložená")
+    assert any(p.part == "sto" for p in deal.result.parts)
+
+
+def test_raised_limit_when_both_defenders_doubled():
+    deal = two_sevens_four_helpers()
+    deal.flek(FORHONT, [])
+    deal.flek(MIDDLE, [Part.DVE_SEDMY])
+    deal.flek(REAR, [Part.DVE_SEDMY])  # re
+    deal.flek(FORHONT, [Part.DVE_SEDMY])  # tutti from the other defender
+    deal.flek(REAR, [Part.DVE_SEDMY])  # boty
+    assert deal.outcome is Outcome.LAID_DOWN
+    assert deal.flekkers == {FORHONT, MIDDLE}
     assert deal.result.units_raw == -40 * 2 * 16
     assert deal.result.limit == 750 and deal.result.units == -750 and deal.result.limited
 
 
 def test_limit_is_500_when_only_one_defender_doubled():
-    deal = deal_with(
-        rear=cards("h7 hA hX hK hQ hJ h9 l7 lA lX"),
-        forhont=cards("lK lQ lJ l9"),
-        talon=cards("h8 l8"),
-    )
-    win_auction(deal, REAR, 11)
-    declare(deal, Contract(ContractType.DVE_SEDMY, "h", "l"), ["h8", "l8"])
+    deal = two_sevens_four_helpers()
     deal.flek(FORHONT, [Part.DVE_SEDMY])
-    deal.flek(MIDDLE, [])
     deal.flek(REAR, [Part.DVE_SEDMY])
     deal.flek(FORHONT, [Part.DVE_SEDMY])
-    deal.flek(MIDDLE, [])
     deal.flek(REAR, [Part.DVE_SEDMY])
     assert deal.result.units == -500
 
 
-def test_missing_seven_loses_two_sevens_without_play():
-    deal = deal_with(rear=cards("h7 hA hX hK"), talon=cards("h8 h9"))
+@pytest.mark.parametrize(
+    "contract", [Contract(ContractType.STO_SEDMA, "b"), Contract(ContractType.SEDMA, "b")]
+)
+def test_sedma_needs_the_trump_seven(contract):
+    deal = deal_with(rear=cards("h7 hA hX hK"), forhont=cards("b7"), talon=cards("h8 h9"))
+    win_auction(deal, REAR, 1)
+    with pytest.raises(RuleError) as error:
+        deal.declare(REAR, contract, ["h8", "h9"])
+    assert error.value.code == "no_seven"
+
+
+def test_two_sevens_without_the_sevens_are_lost_without_play():
+    # After bidding step 9+ there may be nothing else to declare, so it is allowed – and lost.
+    deal = deal_with(rear=cards("h7 hA hX hK"), forhont=cards("b7"), talon=cards("h8 h9"))
     win_auction(deal, REAR, 9)
     declare(deal, Contract(ContractType.DVE_SEDMY, "h", "b"), ["h8", "h9"])
     approve_all(deal)
-    if deal.outcome is not Outcome.FOUR_HELPERS:
-        assert deal.outcome is Outcome.MISSING_SEVEN
-    assert deal.result.units == -80
+    assert deal.outcome is Outcome.LAID_DOWN
+    assert deal.laid_down[Part.DVE_SEDMY][1]["missing"] == ["b7"]
+    assert deal.result.units == -80 and "nemá obě" in deal.result.parts[0].note  # red
+
+
+# ------------------------------------------------------------------- durch
+
+
+def test_durch_with_top_cards_in_every_suit_is_laid_down():
+    # A-K in a side suit is enough: the declarer leads every trick and never needs a third card.
+    hand = cards("hA hK hQ hJ lA lK bA bK aA aK")
+    deal = deal_with(middle=hand, talon=cards("h7 l7"))
+    win_auction(deal, MIDDLE, 8)
+    declare(deal, Contract(ContractType.DURCH), ["h7", "l7"])
+    approve_all(deal)
+    assert deal.outcome is Outcome.LAID_DOWN and not deal.tricks
+    assert deal.result.units == 30 and deal.result.parts[0].note == "ložený"
+    assert deal.result.pb == {}  # a laid-down durch has no unsafe suit
+
+
+def test_durch_is_laid_down_once_the_king_has_fallen():
+    # hA hQ is not solid while hK is out; forhont must drop his single hK under the ace.
+    deal = deal_with(
+        middle=cards("hA hQ lA lK lQ lJ lX l9 l8 l7"),
+        forhont=cards("hK"),
+        rear=cards("h7 h8 h9 hX hJ"),
+        talon=cards("aA aK"),
+    )
+    win_auction(deal, MIDDLE, 8)
+    declare(deal, Contract(ContractType.DURCH), ["aA", "aK"])
+    approve_all(deal)
+    assert deal.phase is Phase.PLAY
+    deal.play(MIDDLE, "hA")
+    deal.play(REAR, deal.legal_plays(REAR)[0])
+    deal.play(FORHONT, "hK")
+    assert deal.outcome is Outcome.LAID_DOWN and len(deal.tricks) == 1
+    assert deal.result.units == 30
+    assert [i["label"] for i in deal.result.pb_items] == ["durch: barva, která není ložená (bez výnosu)"]
+
+
+# ------------------------------------------------------------ flek order
+
+
+def test_second_defender_may_double_what_the_first_left():
+    deal = sedma_deal()
+    deal.flek(MIDDLE, [Part.HRA])
+    assert deal.turn == REAR
+    assert deal.options(REAR)["parts"] == ["sedma"] and deal.options(REAR)["partner"] == ["hra"]
+    with pytest.raises(RuleError):
+        deal.flek(REAR, [Part.HRA])
+    deal.flek(REAR, [Part.SEDMA])
+    assert deal.turn == FORHONT and deal.options(FORHONT)["parts"] == ["hra", "sedma"]
+
+
+def test_second_defender_is_skipped_when_everything_is_doubled():
+    deal = sedma_deal()
+    deal.flek(MIDDLE, [Part.HRA, Part.SEDMA])
+    assert deal.turn == FORHONT and deal.options(FORHONT)["name"] == "re"

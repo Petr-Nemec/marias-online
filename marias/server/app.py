@@ -92,6 +92,19 @@ async def healthz(request: Request) -> Response:
     return JSONResponse({"status": "ok", "version": __version__, **hub.stats()})
 
 
+async def site_info(request: Request) -> Response:
+    """Public facts the client shows in the privacy notice."""
+    settings: Settings = request.app.state.settings
+    return JSONResponse(
+        {
+            "version": __version__,
+            "operator": settings.operator,
+            "contact": settings.contact,
+            "session_hours": settings.session_ttl // 3600,
+        }
+    )
+
+
 async def game_socket(websocket: WebSocket) -> None:
     hub: Hub = websocket.app.state.hub
     settings: Settings = websocket.app.state.settings
@@ -166,6 +179,7 @@ def create_app(settings: Settings | None = None) -> Starlette:
     app = Starlette(
         routes=[
             Route("/healthz", healthz, methods=["GET"]),
+            Route("/api/info", site_info, methods=["GET"]),
             WebSocketRoute("/ws", game_socket),
             Mount("/", app=StaticFiles(directory=WEB_DIR, html=True), name="web"),
         ],

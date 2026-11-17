@@ -62,9 +62,12 @@ def test_thousands_of_deals(policy):
                 action = bot.choose_action(deal, player, rng)
             else:
                 action = random_action(deal, player, rng)
-            # Random actions are not always legal; a rejected one must change nothing.
-            with contextlib.suppress(RuleError):
-                apply(deal, player, action)
+            if policy == "bot":
+                apply(deal, player, action)  # computer players must never move illegally
+            else:
+                # Random actions are not always legal; a rejected one must change nothing.
+                with contextlib.suppress(RuleError):
+                    apply(deal, player, action)
             check_invariants(deal)
         assert deal.phase is Phase.DONE
         result = deal.result
@@ -91,3 +94,19 @@ def test_rejected_actions_leave_the_state_unchanged():
                 apply(deal, player, action)
             except RuleError:
                 assert snapshot(deal) == before
+
+
+def test_fallback_move_is_always_legal():
+    rng = random.Random(77)
+    for _ in range(400):
+        deal = Deal(shuffled_deck(rng))
+        for _step in range(300):
+            if deal.phase is Phase.DONE:
+                break
+            player = deal.turn
+            if rng.random() < 0.3:
+                apply(deal, player, bot.fallback_action(deal, player))
+            else:
+                with contextlib.suppress(RuleError):
+                    apply(deal, player, random_action(deal, player, rng))
+        assert deal.phase is Phase.DONE

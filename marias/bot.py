@@ -12,11 +12,10 @@ import random
 from collections.abc import Sequence
 from typing import Any
 
-from .cards import HEARTS, SUITS, Card, is_sharp, strength
+from .cards import HEARTS, SUITS, Card, full_deck, is_sharp, strength
 from .contracts import LADDER, Contract, ContractType, Part
-from .deal import Deal, Phase
-from .premium import betl_catching_cards, durch_suit_is_solid
-from .rules import winning_index
+from .deal import Deal, Phase, RuleError
+from .rules import betl_catching_cards, durch_suit_is_solid, winning_index
 
 Action = dict[str, Any]
 
@@ -47,8 +46,13 @@ def _side_aces(hand: Sequence[Card], trump: str | None) -> int:
     return sum(1 for c in hand if c[1] == "A" and c[0] != trump)
 
 
+def _unseen(hand: Sequence[Card]) -> list[Card]:
+    """Cards the bot cannot see; it has to assume any of them may be against it."""
+    return [c for c in full_deck() if c not in hand]
+
+
 def _betl_holes(hand: Sequence[Card]) -> list[Card]:
-    return [c for s in SUITS for c in betl_catching_cards(_suit(hand, s))]
+    return betl_catching_cards(hand, _unseen(hand))
 
 
 def _durch_losers(hand: Sequence[Card]) -> list[Card]:
@@ -126,7 +130,7 @@ def _candidates(hand: Sequence[Card], min_level: int) -> list[tuple[float, Contr
             continue
         trumps = [HEARTS] if red else [s for s in SUITS if s != HEARTS]
         for trump in trumps:
-            if ctype is ContractType.SEDMA and f"{trump}7" not in hand:
+            if ctype in (ContractType.SEDMA, ContractType.STO_SEDMA) and f"{trump}7" not in hand:
                 continue
             if ctype in (ContractType.DVE_SEDMY, ContractType.DVE_SEDMY_STO):
                 for helper in SUITS:
@@ -218,13 +222,13 @@ def _flek(deal: Deal, player: int) -> list[Part]:
     chosen: list[Part] = []
 
     if player == deal.declarer:
-        if deal.flek_stage == 2 and Part.HRA in deal.flek_open and sharps >= 5 and len(trumps) >= 5:
+        if deal.flek_stage == 2 and Part.HRA in deal.flek_available and sharps >= 5 and len(trumps) >= 5:
             chosen.append(Part.HRA)
         return chosen
     if deal.flek_stage != 1:
         return chosen
 
-    for part in deal.flek_open:
+    for part in deal.flek_available:
         strong_sedma = len(trumps) >= 4 or (len(trumps) == 3 and sharps >= 4)
         if (part is Part.SEDMA and strong_sedma) or (part is Part.HRA and sharps >= 5):
             chosen.append(part)
@@ -313,3 +317,30 @@ def _play(deal: Deal, player: int, rng: random.Random) -> Card:
         top = max(winners, key=power)
         return top if top[1] == "A" else min(winners, key=power)
     return lowest
+
+
+def fallback_action(deal: Deal, player: int) -> Action:
+    """A move that is always legal, used if the regular choice is ever rejected."""
+    if deal.phase is Phase.BIDDING:
+        return {"a": "pass"}
+    if deal.phase is Phase.FLEK:
+        return {"a": "flek", "parts": []}
+    if deal.phase is Phase.PLAY:
+        return {"a": "play", "card": deal.legal_plays(player)[0], "announce": True}
+    hand = deal.hands[player]
+    for _viability, contract in sorted(_candidates(hand, deal.min_level), key=lambda c: c[1].level):
+        for first in range(len(hand)):
+            for second in range(first + 1, len(hand)):
+                discard = [hand[first], hand[second]]
+                try:
+                    deal.check_declaration(player, contract, discard)
+                except RuleError:
+                    continue
+                return {
+                    "a": "declare",
+                    "contract": contract.type.value,
+                    "trump": contract.trump,
+                    "helper": contract.helper,
+                    "discard": discard,
+                }
+    raise RuntimeError("no legal declaration exists")  # pragma: no cover - rules guarantee one

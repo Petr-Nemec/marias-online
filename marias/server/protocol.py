@@ -94,10 +94,6 @@ class Ready(_Message):
     type: Literal["ready"]
 
 
-class Back(_Message):
-    type: Literal["back"]
-
-
 class Ping(_Message):
     type: Literal["ping"]
 
@@ -148,7 +144,6 @@ ClientMessage = Annotated[
     | AddBot
     | RemoveBot
     | Ready
-    | Back
     | Ping
     | Chat
     | Action,

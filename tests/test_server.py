@@ -262,3 +262,40 @@ def test_connection_counters_are_released():
                 hello(ws, name=f"Host {i}")
         hub = app.state.hub
         assert hub.clients == set() and hub._per_ip == {}
+
+
+def test_site_info_for_the_privacy_notice():
+    settings = Settings(operator="Petr Němec", contact="info@example.cz", session_ttl=7200)
+    with TestClient(create_app(settings)) as test_client:
+        info = test_client.get("/api/info").json()
+    assert info["operator"] == "Petr Němec" and info["contact"] == "info@example.cz"
+    assert info["session_hours"] == 2
+
+
+def test_two_missed_turns_send_the_player_back_to_the_lobby():
+    from marias.table import KICK_REASON
+
+    app = create_app(Settings())
+    with TestClient(app) as test_client, test_client.websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello(ws)
+        ws.send_json({"type": "create_table", "turn_seconds": 30})
+        table_id = receive_until(ws, "table")["state"]["id"]
+        table = app.state.hub.tables[table_id]
+        ws.send_json({"type": "add_bot", "seat": 1})
+        ws.send_json({"type": "add_bot", "seat": 2})
+        ws.send_json({"type": "ready"})
+        for _ in range(2000):
+            message = ws.receive_json()
+            if message["type"] == "left":
+                assert message["reason"] == KICK_REASON
+                break
+            if message["type"] != "table":
+                continue
+            state = message["state"]
+            if state["status"] == "between":
+                ws.send_json({"type": "ready"})
+            elif state["turn_seat"] == 0 and table.deadline:
+                table.deadline = 0.0  # let the clock run out at once
+        else:
+            pytest.fail("the player was never removed")
+        assert table.seat_of(next(iter(app.state.hub.sessions))) is None
