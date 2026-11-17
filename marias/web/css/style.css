@@ -987,6 +987,10 @@ tbody th {
   gap: 0.25rem;
 }
 
+.tricks li.laid {
+  opacity: 0.6;
+}
+
 .tricks .took .card {
   box-shadow: 0 0 0 2px var(--brass);
 }

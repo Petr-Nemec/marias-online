@@ -294,8 +294,8 @@ def test_two_missed_turns_send_the_player_back_to_the_lobby():
             state = message["state"]
             if state["status"] == "between":
                 ws.send_json({"type": "ready"})
-            elif state["turn_seat"] == 0 and table.deadline:
-                table.deadline = 0.0  # let the clock run out at once
+            elif table.deadline:
+                table.deadline = 0.0  # no waiting: bots move at once, the player times out
         else:
             pytest.fail("the player was never removed")
         assert table.seat_of(next(iter(app.state.hub.sessions))) is None

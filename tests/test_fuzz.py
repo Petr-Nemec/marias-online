@@ -75,6 +75,10 @@ def test_thousands_of_deals(policy):
         assert result.units == max(-result.limit, min(result.limit, sum(p.units for p in result.parts)))
         if deal.outcome is Outcome.PLAYED and deal.contract.counts_points and len(deal.tricks) == 10:
             assert sum(deal.trick_points(p) for p in range(3)) == 90
+        if deal.laid_after is not None:
+            # A laid-down hand must really be unbeatable: every credited trick is the declarer's.
+            assert all(t.winner == deal.declarer for t in deal.tricks[deal.laid_after :])
+            assert len(deal.tricks) == 10
         outcomes.add(deal.outcome)
         # The view must always be JSON-friendly for every seat.
         for seat in (0, 1, 2, None):

@@ -554,6 +554,8 @@ class Table:
             self._say(line, now, kind="game", seat=seat, ev=event["t"])
 
     def _describe(self, event: dict[str, Any]) -> str | None:
+        if event.get("auto"):
+            return None  # tricks credited by a laid-down hand are not narrated one by one
         kind = event["t"]
         name = self.seats[self.role_seats[event["p"]]].name if "p" in event else ""
         if kind == "bid":
@@ -588,6 +590,8 @@ class Table:
                 text += f" – hlásí {event['hlaska']}"
             return text + "."
         if kind == "laid_down":
+            if event["game"] == "all":
+                return f"{name} pokládá karty: všechny zbývající štychy bere aktér."
             if event["game"] == "dve_sedmy" and "missing" in event:
                 return f"{name} nemá obě hlášené sedmy – dvě sedmy prohrává (ložená hra)."
             if event["game"] == "dve_sedmy":

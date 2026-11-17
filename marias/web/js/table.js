@@ -762,6 +762,10 @@ export class TableView {
 
     const notes = [];
     if (result.outcome === 'approved') notes.push('Sedma bez fleku na sedmu a bez re na hru se nesehrává.');
+    if (deal.laid_after !== null && deal.laid_after !== undefined) {
+      const from = deal.laid_after ? `po ${deal.laid_after}. štychu` : 'hned na začátku';
+      notes.push(`Ložená hra: ${declarer} položil karty ${from}, zbývající štychy připadly jemu.`);
+    }
     for (const [part, info] of Object.entries(deal.laid_down || {})) {
       if (part === 'dve_sedmy' && info.missing) {
         notes.push('Ložená hra: aktér neměl obě hlášené sedmy.');
@@ -807,7 +811,7 @@ export class TableView {
       return h('div.reveal-hand', null, h('h4', null, this.#roleName(role)), row(cards));
     });
     const tricks = reveal.tricks.map((trick, i) => h(
-      'li', null,
+      'li', { class: deal.laid_after !== null && i >= deal.laid_after ? 'laid' : '', title: deal.laid_after !== null && i >= deal.laid_after ? 'Připsáno položením karet' : null },
       h('span.trick-no', null, `${i + 1}.`),
       trick.cards.map(({ p, c }) => h('span', { class: p === trick.winner ? 'took' : '' }, cardElement(c, { small: true }))),
       h('span.muted', null, `bere ${this.#roleName(trick.winner)}`),

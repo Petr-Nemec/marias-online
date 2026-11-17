@@ -138,7 +138,8 @@ def score_deal(deal: Deal) -> DealResult:
     assert deal.contract is not None
     contract = deal.contract
     red = 2 if contract.red else 1
-    played = deal.outcome is Outcome.PLAYED
+    # A laid-down point game was credited trick by trick, so it scores like a played one.
+    played = deal.outcome is Outcome.PLAYED or deal.laid_after is not None
 
     def rate(part: Part) -> int:
         return RATE_UNITS[part] * red << deal.flek_counts[part]

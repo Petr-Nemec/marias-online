@@ -28,7 +28,7 @@ or cannot be judged by software and are not handled.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .cards import SUITS, Card
@@ -98,10 +98,10 @@ def premium_points(deal: Deal, result: DealResult) -> tuple[dict[int, int], list
         criteria.extend(_two_sevens_criteria(deal, result, trumps, bool(won.get(Part.STO.value))))
 
     if won.get(Part.BETL.value):
-        criteria.extend(_betl_criteria(deal))
+        criteria.extend(_no_gain_from_discards(deal, _betl_criteria))
 
     if won.get(Part.DURCH.value):
-        criteria.extend(_durch_criteria(deal))
+        criteria.extend(_no_gain_from_discards(deal, _durch_criteria))
 
     for label, points in _combine(criteria, with_lead=result.with_lead):
         award(declarer, label, points)
@@ -221,21 +221,34 @@ def _strong_two_sevens(twelve: Sequence[Card], trump: str | None, helpers: Seque
     return top_trumps and len(helpers) >= 6 and other_aces
 
 
-def _betl_criteria(deal: Deal) -> list[Criterion]:
+def _no_gain_from_discards(
+    deal: Deal, criteria: Callable[[Deal, Sequence[Card]], dict[str, Criterion]]
+) -> list[Criterion]:
+    """Discarding to the talon may lose PB but never gain any.
+
+    A criterion counts only if it holds both for the ten cards the declarer
+    played with and for all twelve cards he had after taking the talon.
+    """
     assert deal.declarer is not None
-    hand = deal.play_hands[deal.declarer]
+    kept = criteria(deal, deal.play_hands[deal.declarer])
+    full = criteria(deal, deal.declarer_twelve)
+    return [criterion for suit, criterion in kept.items() if full.get(suit) == criterion]
+
+
+def _betl_criteria(deal: Deal, hand: Sequence[Card]) -> dict[str, Criterion]:
     outstanding = _defence_cards(deal)
     first_lead = deal.tricks[0].cards[0] if deal.tricks else None
-    criteria: list[Criterion] = []
+    criteria: dict[str, Criterion] = {}
     for suit in SUITS:
         cards = [c for c in hand if c[0] == suit]
         catching = betl_catching_cards(cards, outstanding)
         if len(cards) >= 6 and len(catching) == 1:
-            if catching[0] != first_lead:  # footnote 2: not when it was simply led away
-                criteria.append(("betl: šesterák s jednou chytající kartou", 5, 5))
+            # Footnote 2: not when the catching card was simply led away first.
+            if catching[0] != first_lead or len(hand) > 10:
+                criteria[suit] = ("betl: šesterák s jednou chytající kartou", 5, 5)
             continue
         if f"{suit}A" in catching:
-            criteria.append(("betl: chytající eso", 10, 10))
+            criteria[suit] = ("betl: chytající eso", 10, 10)
     return criteria
 
 
@@ -244,18 +257,16 @@ def _defence_cards(deal: Deal) -> list[Card]:
     return [c for d in deal.defenders for c in deal.play_hands[d]]
 
 
-def _durch_criteria(deal: Deal) -> list[Criterion]:
-    assert deal.declarer is not None
-    hand = deal.play_hands[deal.declarer]
+def _durch_criteria(deal: Deal, hand: Sequence[Card]) -> dict[str, Criterion]:
     defence = _defence_cards(deal)
-    criteria: list[Criterion] = []
+    criteria: dict[str, Criterion] = {}
     for suit in SUITS:
         own = [c for c in hand if c[0] == suit]
         if not own:
             continue
         outstanding = [c for c in defence if c[0] == suit]
         if not durch_suit_is_solid(own, outstanding):
-            criteria.append(("durch: barva, která není ložená", 10, 10))
+            criteria[suit] = ("durch: barva, která není ložená", 10, 10)
     return criteria
 
 

@@ -111,16 +111,19 @@ def betl_catching_cards(own: Collection[Card], outstanding: Collection[Card]) ->
     return catching
 
 
-def durch_suit_is_solid(own: Collection[Card], outstanding: Collection[Card]) -> bool:
-    """Is a suit „ložená“ in a durch: no trick can be lost in it?
+def durch_suit_is_solid(own: Collection[Card], outstanding: Collection[Card], *, plain: bool = True) -> bool:
+    """Is a suit „ložená“: can no trick be lost in it when leading it from the top?
+
+    ``plain`` selects the card order: natural (betl, durch) or with the ten
+    below the ace (games with trumps).
 
     The test assumes one defender holds all outstanding cards of the suit and keeps
     his highest card as long as possible.  Leading from the top, each of the
     declarer's first n cards (n = the smaller of the two counts) must beat that
     highest outstanding card.
     """
-    mine = sorted((strength(c, plain=True) for c in own), reverse=True)
-    theirs = sorted((strength(c, plain=True) for c in outstanding), reverse=True)
+    mine = sorted((strength(c, plain=plain) for c in own), reverse=True)
+    theirs = sorted((strength(c, plain=plain) for c in outstanding), reverse=True)
     if not mine or not theirs:
         return True
     return all(mine[i] > theirs[0] for i in range(min(len(mine), len(theirs))))

@@ -124,8 +124,17 @@ Sazby v násobcích základu (soutěžně 0,20 Kč):
 ## 7. Prémiové body (`premium.py`)
 
 Body se připisují jen za ohlášený a vyhraný závazek (u fleků na betl a durch za úspěšný flek).
-Rozhoduje dvanáct karet aktéra po vzetí talonu, tj. **odložené karty se počítají**, jako by je
-aktér držel. Každé kritérium má hodnotu „s výnosem“ (aktér je forhont) a „bez výnosu“.
+
+**Odložením do talonu nelze prémiové body získat, jen o ně přijít.**
+
+- Počty trumfů a pomocných (sedma, sto, dvě sedmy) se berou z dvanácti karet po vzetí talonu,
+  tj. **odložené karty se počítají**, jako by je aktér držel. Kdo má 5 pomocných a jednu odloží,
+  nedostane body za 4 pomocné.
+- U betlu a durchu se kritérium uzná, jen když platí pro deset karet, se kterými aktér hrál,
+  **i** pro dvanáct karet včetně odložených. Odložené chytající eso tedy body nepřinese (aktér si
+  betl ulehčil); naopak když aktér odloží kartu, aby barvu zhoršil (např. krále, bez kterého
+  přestane být barva při durchu ložená), body za ni také nedostane.
+ Každé kritérium má hodnotu „s výnosem“ (aktér je forhont) a „bez výnosu“.
 Splní-li hra víc kritérií, sčítají se, ale jen nejvyšší z nich se počítá v hodnotě bez výnosu.
 Červené trumfy body zdvojnásobují.
 
@@ -172,17 +181,23 @@ dohraje; betl končí prvním štychem aktéra, durch prvním štychem obrany a 
    Bez fleku na dvě sedmy se hraje normálně (obrana si rozložení nemusí všimnout).
    U dvou sedem a sta se dál sehraje sto.
 2. **Dvě sedmy bez obou sedem** v aktérově ruce: prohrané hned po flecích, bez ohledu na fleky.
-3. **Betl**: před každým štychem (i před prvním) program zkontroluje, zda aktér nemá žádnou
+3. **Sedma, sto, sto a sedma**: před každým štychem, kdy je aktér na výnosu, program zkontroluje,
+   zda jistě vezme všechny zbývající štychy: jeho trumfy jsou ložené (pořadí s desítkou pod esem)
+   vůči trumfům obrany a má jich aspoň tolik jako obrana (aby je stihl všechny vytáhnout, i kdyby je
+   držel jediný obránce), a každá jeho další barva je ložená. Pokud ano, zbývající štychy se připíšou
+   aktérovi a hra se vyhodnotí obvyklým způsobem: body z karet, poslední štych, hlášky (svoje
+   i obránců, které ještě drží), sedma i tichá sedma, drží-li aktér trumfovou sedmu.
+   Dvě sedmy a dvě sedmy a sto se vždy dohrávají, protože sedmy musí vzít určené štychy.
+4. **Betl**: před každým štychem (i před prvním) program zkontroluje, zda aktér nemá žádnou
    chytající kartu (oddíl 7) vůči kartám, které obraně zbývají. Pokud ne, betl nemůže prohrát a je
    vyhraný. Před prvním štychem, kdy aktér vynáší, musí navíc mít kartu v barvě, kterou má
    i obrana (jinak by vlastním výnosem štych vzal).
-4. **Durch**: před každým štychem, kdy je aktér na výnosu, program zkontroluje, zda jsou všechny
+5. **Durch**: před každým štychem, kdy je aktér na výnosu, program zkontroluje, zda jsou všechny
    jeho barvy ložené (oddíl 7) vůči kartám, které obraně zbývají. Pokud ano, durch nemůže prohrát
    a je vyhraný.
 
-Kontroly 3 a 4 vycházejí jen z toho, co aktér ví: neznámé karty obrany mohou být rozložené
+Kontroly 3 až 5 vycházejí jen z toho, co aktér ví: neznámé karty obrany mohou být rozložené
 jakkoli. Program tedy hru položí jen tehdy, když by ji aktér u skutečného stolu mohl položit sám.
-Závazky na body (sedma, sto, sto a sedma) se vždy dohrávají.
 
 ## 9. Co program nedělá
 

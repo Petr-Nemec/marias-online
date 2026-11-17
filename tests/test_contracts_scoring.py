@@ -165,15 +165,15 @@ def test_flek_on_game_without_re_is_conceded():
     assert deal.result.units == 0
 
 
-def test_flek_on_sedma_is_played_out_with_tiche_sto():
+def test_sedma_laid_down_when_the_declarer_takes_everything():
     deal = sedma_deal()
     deal.flek(MIDDLE, [Part.SEDMA])
     deal.flek(REAR, [])
     deal.flek(FORHONT, [])
-    assert deal.phase is Phase.PLAY and deal.leader == FORHONT
-    order = [c for c in deal.hands[FORHONT] if c != "a7"] + ["a7"]
-    play_scripted(deal, order)
-    assert deal.outcome is Outcome.PLAYED and len(deal.tricks) == 10
+    # Forhont leads with all eight trumps and both side aces: nothing can be lost.
+    assert deal.outcome is Outcome.LAID_DOWN and deal.laid_after == 0
+    assert len(deal.tricks) == 10 and all(t.winner == FORHONT for t in deal.tricks)
+    assert deal.tricks[-1].card_of(FORHONT) == "a7"  # the seven takes the last trick
     result = deal.result
     # All tricks: 80 card points + 10 for the last trick + trump marriage 40 = 130.
     assert result.declarer_points == 130
@@ -183,11 +183,25 @@ def test_flek_on_sedma_is_played_out_with_tiche_sto():
     assert result.units == 12
 
 
-def test_announced_seven_cannot_be_played_early():
-    deal = sedma_deal()
+def weak_sedma_deal():
+    """Forhont plays sedma with all trumps but weak side cards, so the hand is played."""
+    hand = [f"a{r}" for r in "AXKQJ987"] + ["l9", "b9"]
+    deal = deal_with(forhont=hand, talon=cards("l7 b7"))
+    force_to_forhont(deal)
+    declare(deal, Contract(ContractType.SEDMA, "a"), ["l7", "b7"])
     deal.flek(MIDDLE, [Part.SEDMA])
     deal.flek(REAR, [])
     deal.flek(FORHONT, [])
+    return deal
+
+
+def test_sedma_with_a_side_loser_is_played():
+    deal = weak_sedma_deal()
+    assert deal.phase is Phase.PLAY and deal.laid_after is None
+
+
+def test_announced_seven_cannot_be_played_early():
+    deal = weak_sedma_deal()
     with pytest.raises(RuleError) as e:
         deal.play(FORHONT, "a7")
     assert e.value.code == "illegal_card"
@@ -209,7 +223,7 @@ def test_omyl_only_for_plain_sedma():
 # -------------------------------------------------------------------- sto
 
 
-def test_won_red_sto_counts_every_ten_and_ticha_sedma():
+def test_won_red_sto_counts_every_ten_and_ticha_sedma():  # laid down at once
     hand = [f"h{r}" for r in "AXKQJ987"] + ["lA", "bA"]
     deal = deal_with(forhont=hand, talon=cards("l7 b7"))
     force_to_forhont(deal)
@@ -463,3 +477,33 @@ def test_second_defender_is_skipped_when_everything_is_doubled():
     deal = sedma_deal()
     deal.flek(MIDDLE, [Part.HRA, Part.SEDMA])
     assert deal.turn == FORHONT and deal.options(FORHONT)["name"] == "re"
+
+
+def test_point_game_not_laid_down_when_trumps_are_outnumbered():
+    # Two top trumps against three outstanding: a defender could keep a trump to ruff.
+    deal = deal_with(
+        forhont=cards("hA hX lA lX lK bA bX bK aA aX"),
+        middle=cards("h7 h8 h9"),
+        talon=cards("l7 b7"),
+    )
+    force_to_forhont(deal)
+    declare(deal, Contract(ContractType.STO, "h"), ["l7", "b7"])
+    approve_all(deal)
+    assert deal.phase is Phase.PLAY and deal.laid_after is None
+
+
+def test_defence_marriages_count_when_the_rest_is_laid_down():
+    deal = deal_with(
+        forhont=cards("aA aX aK aQ aJ a9 a8 lA bA hA"),
+        middle=cards("lK lQ"),
+        talon=cards("l7 b7"),
+    )
+    force_to_forhont(deal)
+    declare(deal, Contract(ContractType.STO, "a"), ["l7", "b7"])
+    approve_all(deal)
+    assert deal.outcome is Outcome.LAID_DOWN
+    held = deal.play_hands[MIDDLE]
+    expected = sorted(40 if s == "a" else 20 for s in "hlba" if f"{s}K" in held and f"{s}Q" in held)
+    assert 20 in deal.result.hlasky[MIDDLE]  # the leaf marriage he was dealt
+    assert sorted(deal.result.hlasky[MIDDLE]) == expected
+    assert all(e.get("auto") for e in deal.events if e["t"] in ("play", "trick"))
