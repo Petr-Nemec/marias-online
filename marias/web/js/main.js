@@ -239,6 +239,31 @@ $('#name-form').addEventListener('submit', () => {
 
 $('#btn-help').addEventListener('click', () => $('#dlg-help').showModal());
 
+let siteInfo = null;
+
+async function openPrivacy() {
+  const dialog = $('#dlg-privacy');
+  for (const open of document.querySelectorAll('dialog[open]')) if (open !== dialog) open.close();
+  dialog.showModal();
+  if (siteInfo) return;
+  try {
+    const response = await fetch('api/info', { headers: { accept: 'application/json' } });
+    siteInfo = await response.json();
+  } catch {
+    return;
+  }
+  if (siteInfo.operator) $('#privacy-operator').textContent = siteInfo.operator;
+  if (siteInfo.contact) {
+    $('#privacy-contact').textContent = siteInfo.contact;
+    $('#privacy-contact-line').hidden = false;
+  }
+  if (siteInfo.session_hours) $('#privacy-hours').textContent = String(siteInfo.session_hours);
+}
+
+for (const button of document.querySelectorAll('[data-privacy]')) {
+  button.addEventListener('click', openPrivacy);
+}
+
 for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => button.closest('dialog').close());
 }

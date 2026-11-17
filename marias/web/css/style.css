@@ -755,6 +755,31 @@ span.card.small {
   padding: 1px;
 }
 
+.bid-select {
+  width: auto;
+  min-width: 14rem;
+  max-width: 100%;
+  padding: 0.5rem 0.6rem;
+  font-weight: 600;
+}
+
+.bid-select option:disabled {
+  color: #7d8a84;
+}
+
+.link {
+  padding: 0;
+  border-radius: 0.2rem;
+  color: var(--brass);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.side-foot {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
 .problem {
   color: #ffd98a;
   font-size: 0.92rem;
@@ -960,6 +985,10 @@ tbody th {
   display: flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+.tricks li.laid {
+  opacity: 0.6;
 }
 
 .tricks .took .card {

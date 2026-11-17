@@ -7,7 +7,9 @@ name = "marias-online"
 version = "4.0.0"
 description = "Licitovaný mariáš online podle pravidel Českého svazu mariáše"
 readme = "README.md"
-license = "AGPL-3.0-only"
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE", "marias/web/fonts/OFL-Bitter.txt"]
+classifiers = ["Private :: Do Not Upload"]
 requires-python = ">=3.11"
 dependencies = [
     "starlette>=1.0,<2",

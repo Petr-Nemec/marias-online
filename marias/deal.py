@@ -21,11 +21,13 @@ from typing import Any
 
 from .cards import (
     Card,
+    card_name_cs,
     card_points,
     deal_cards,
     is_card,
     is_sharp,
     sort_hand,
+    strength,
 )
 from .contracts import (
     FLEK_NAMES_CS,
@@ -38,7 +40,7 @@ from .contracts import (
     ContractType,
     Part,
 )
-from .rules import legal_cards, winning_index
+from .rules import betl_catching_cards, durch_suit_is_solid, legal_cards, winning_index
 
 FORHONT = 0
 MIDDLE = 1
@@ -70,8 +72,7 @@ class Outcome(StrEnum):
     PLAYED = "played"
     OMYL = "omyl"  # declarer folded a plain sedma
     APPROVED = "approved"  # sedma that is settled without play
-    FOUR_HELPERS = "four_helpers"  # dvě sedmy against 4+ helper cards in one hand
-    MISSING_SEVEN = "missing_seven"  # dvě sedmy announced without both sevens
+    LAID_DOWN = "laid_down"  # ložená hra: the result was certain and the cards were laid down
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,7 @@ class Deal:
         self.flek_counts: dict[Part, int] = {}
         self.flek_stage = 0
         self.flek_open: list[Part] = []
+        self.flek_available: list[Part] = []  # what the player on turn may double
         self.flek_queue: list[int] = []
         self._flek_stage_union: set[Part] = set()
         self.flekkers: set[int] = set()  # defenders who doubled anything
@@ -137,7 +139,11 @@ class Deal:
         self.trick: list[Card] = []
         self.tricks: list[TrickRecord] = []
         self.hlasky: list[list[str]] = [[], [], []]
-        self.auto_lost: set[Part] = set()
+        #: Ložená hra: part -> (won by the declarer, which side laid down, details).
+        self.laid_down: dict[Part, tuple[bool, dict[str, Any]]] = {}
+        #: Trick count at which a point game was laid down (the rest went to the declarer).
+        self.laid_after: int | None = None
+        self._laying = False
         self.two_sevens_failed = False
 
         # --- result ----------------------------------------------------------
@@ -149,6 +155,8 @@ class Deal:
     # ------------------------------------------------------------------ utils
 
     def _log(self, kind: str, **data: Any) -> None:
+        if self._laying:
+            data["auto"] = True  # credited by a laid-down hand, not actually played
         self.events.append({"t": kind, **data})
 
     def _require(self, phase: Phase, player: int) -> None:
@@ -236,6 +244,13 @@ class Deal:
 
     def declare(self, player: int, contract: Contract, discards: Sequence[Card]) -> None:
         """Discard two cards to the talon and announce the final contract."""
+        self.check_declaration(player, contract, discards)
+        hand = self.hands[player]
+        cards = list(discards)
+        self._apply_declaration(player, contract, hand, cards)
+
+    def check_declaration(self, player: int, contract: Contract, discards: Sequence[Card]) -> None:
+        """Raise :class:`RuleError` unless the declaration is legal (changes nothing)."""
         self._require(Phase.TALON, player)
         hand = self.hands[player]
         cards = list(discards)
@@ -252,9 +267,18 @@ class Deal:
             raise RuleError("sharp_discard", "Esa a desítky smí do talonu jen při betlu a durchu.")
         if any(c in contract.announced_sevens for c in cards):
             raise RuleError("seven_discard", "Hlášenou sedmu nelze odložit do talonu.")
-        if contract.type is ContractType.SEDMA and f"{contract.trump}7" not in hand:
-            raise RuleError("no_seven", "Sedmu nelze hrát bez trumfové sedmy v ruce.")
+        # Sedma and sto a sedma always leave a legal alternative at or above the bid
+        # (sto, betl, durch); dvě sedmy may be announced without the sevens and are lost.
+        missing = [c for c in contract.announced_sevens if c not in hand]
+        if missing and contract.type not in TWO_SEVENS_TYPES:
+            raise RuleError(
+                "no_seven",
+                f"Bez karty {card_name_cs(missing[0])} v ruce nelze tento závazek hlásit.",
+            )
 
+    def _apply_declaration(
+        self, player: int, contract: Contract, hand: list[Card], cards: list[Card]
+    ) -> None:
         self.contract = contract
         self.discards = (cards[0], cards[1])
         remaining = [c for c in hand if c not in cards]
@@ -268,6 +292,7 @@ class Deal:
         self.flek_counts = dict.fromkeys(contract.parts, 0)
         self.flek_stage = 1
         self.flek_open = list(contract.parts)
+        self.flek_available = list(contract.parts)
         self.flek_queue = list(self.defenders)
         self._flek_stage_union = set()
         self.phase = Phase.FLEK
@@ -279,14 +304,18 @@ class Deal:
         """Double the given parts of the contract; an empty list means „dobrý“."""
         self._require(Phase.FLEK, player)
         chosen = list(parts)
-        if len(set(chosen)) != len(chosen) or any(p not in self.flek_open for p in chosen):
+        if len(set(chosen)) != len(chosen) or any(p not in self.flek_available for p in chosen):
             raise RuleError("bad_flek", "Tuhle část závazku teď flekovat nelze.")
         self._flek_stage_union.update(chosen)
         if chosen and player != self.declarer:
             self.flekkers.add(player)
         self._log("flek", p=player, parts=[p.value for p in chosen], stage=self.flek_stage)
         self.flek_queue.pop(0)
-        if self.flek_queue:
+        # The second defender may still double what the first one left alone; when
+        # nothing is left, he is not asked at all.
+        left = [p for p in self.flek_open if p not in self._flek_stage_union]
+        if self.flek_queue and left:
+            self.flek_available = left
             self.turn = self.flek_queue[0]
             return
 
@@ -299,6 +328,7 @@ class Deal:
         # Next round: only what the other side has just doubled may be raised.
         self.flek_stage += 1
         self.flek_open = doubled
+        self.flek_available = list(doubled)
         self._flek_stage_union = set()
         assert self.declarer is not None
         self.flek_queue = [self.declarer] if self.flek_stage % 2 == 0 else list(self.defenders)
@@ -307,8 +337,8 @@ class Deal:
     def _after_flek(self) -> None:
         assert self.contract is not None and self.declarer is not None
         contract = self.contract
-        declarer_hand = self.hands[self.declarer]
         self.flek_open = []
+        self.flek_available = []
         self.flek_queue = []
 
         # A sedma is played only when the sedma was doubled or the game redoubled;
@@ -321,29 +351,147 @@ class Deal:
             self._finish(Outcome.APPROVED)
             return
 
-        missing_seven = any(c not in declarer_hand for c in contract.announced_sevens)
-        if contract.type in TWO_SEVENS_TYPES:
-            four_helpers = any(
-                sum(1 for c in self.hands[d] if c[0] == contract.helper) >= 4 for d in self.defenders
-            )
-            if contract.type is ContractType.DVE_SEDMY:
-                if four_helpers:
-                    self._finish(Outcome.FOUR_HELPERS)
-                    return
-                if missing_seven:
-                    self._finish(Outcome.MISSING_SEVEN)
-                    return
-            elif four_helpers or missing_seven:
-                # With a sto on top the hand is played; the sevens are lost regardless.
-                self.auto_lost.add(Part.DVE_SEDMY)
-        elif contract.type is ContractType.STO_SEDMA and missing_seven:
-            self.auto_lost.add(Part.SEDMA)
+        # With dvě sedmy and sto, laid-down sevens still leave the sto to be played.
+        sevens_laid = contract.type in TWO_SEVENS_TYPES and self._two_sevens_laid_down()
+        if sevens_laid and contract.type is ContractType.DVE_SEDMY:
+            self._finish(Outcome.LAID_DOWN)
+            return
 
         self.phase = Phase.PLAY
         self.leader = self.declarer if contract.plain else FORHONT
         self.turn = self.leader
         self.trick = []
         self._log("play_start", leader=self.leader)
+        self._check_laid_down()
+
+    # --------------------------------------------------------------- ložená hra
+
+    def _two_sevens_laid_down(self) -> bool:
+        """Dvě sedmy cannot be made when a defender holds as many helpers as the declarer.
+
+        Every helper card beats the helper seven, and each round of the helper suit
+        draws at most one card from each defender, so the seven is always caught.
+        The defence lays the cards down only when it doubled the dvě sedmy.
+        """
+        assert self.contract is not None and self.declarer is not None
+        missing = [c for c in self.contract.announced_sevens if c not in self.hands[self.declarer]]
+        if missing:
+            details: dict[str, Any] = {"game": "dve_sedmy", "p": self.declarer, "missing": missing}
+            self.laid_down[Part.DVE_SEDMY] = (False, details)
+            self._log("laid_down", **details)
+            return True
+        if self.flek_counts[Part.DVE_SEDMY] == 0:
+            return False
+        helper = self.contract.helper
+        mine = sum(1 for c in self.hands[self.declarer] if c[0] == helper)
+        counts = {d: sum(1 for c in self.hands[d] if c[0] == helper) for d in self.defenders}
+        defender = max(counts, key=lambda d: counts[d])
+        if counts[defender] < mine:
+            return False
+        details = {"game": "dve_sedmy", "p": defender, "theirs": counts[defender], "mine": mine}
+        self.laid_down[Part.DVE_SEDMY] = (False, details)
+        self._log("laid_down", **details)
+        return True
+
+    def _check_laid_down(self) -> None:
+        """Before every trick: end the hand if its result is already certain."""
+        if self._laying or self.phase is not Phase.PLAY:
+            return
+        if self._plain_game_laid_down():
+            self._finish(Outcome.LAID_DOWN)
+        elif self._point_game_laid_down():
+            self._credit_remaining_tricks()
+
+    def _point_game_laid_down(self) -> bool:
+        """Sedma, sto or sto a sedma where the declarer surely takes every remaining trick.
+
+        The declarer must be on lead; his trumps must be solid against the defence's
+        trumps and at least as many (so he can draw them all even if one defender
+        holds them); every side suit he holds must be solid.  Card order is that of
+        trump games.  Contracts with dvě sedmy are always played out, because the
+        two sevens must win particular tricks.
+        """
+        assert self.contract is not None and self.declarer is not None
+        contract = self.contract
+        if contract.type not in (ContractType.SEDMA, ContractType.STO, ContractType.STO_SEDMA):
+            return False
+        if self.trick or self.leader != self.declarer:
+            return False
+        own = self.hands[self.declarer]
+        outstanding = [c for d in self.defenders for c in self.hands[d]]
+        own_trumps = [c for c in own if c[0] == contract.trump]
+        their_trumps = [c for c in outstanding if c[0] == contract.trump]
+        if len(own_trumps) < len(their_trumps):
+            return False
+        for suit in {c[0] for c in own}:
+            mine = [c for c in own if c[0] == suit]
+            theirs = [c for c in outstanding if c[0] == suit]
+            if not durch_suit_is_solid(mine, theirs, plain=False):
+                return False
+        self.laid_after = len(self.tricks)
+        self._log("laid_down", game="all", p=self.declarer, tricks=len(self.tricks))
+        return True
+
+    def _credit_remaining_tricks(self) -> None:
+        """Play the rest out internally so the usual scoring applies.
+
+        The declarer draws trumps from the top, then plays his side suits from the
+        top and keeps the trump seven for the last trick; the defenders announce
+        every marriage they hold and otherwise discard their lowest card.
+        """
+        assert self.contract is not None and self.declarer is not None
+        trump = self.contract.trump
+        self._laying = True
+        try:
+            while self.phase is Phase.PLAY:
+                player = self.turn
+                assert player is not None
+                legal = self.legal_plays(player)
+                if player == self.declarer:
+                    their_trumps = any(c[0] == trump for d in self.defenders for c in self.hands[d])
+                    trumps = [c for c in legal if c[0] == trump]
+                    side = [c for c in legal if c[0] != trump]
+                    pool = trumps if their_trumps and trumps else side or trumps
+                    card = max(pool, key=lambda c: strength(c, plain=False))
+                else:
+                    card = max(
+                        legal,
+                        key=lambda c: (self.hlaska_value(player, c) > 0, -strength(c, plain=False)),
+                    )
+                self.play(player, card)
+        finally:
+            self._laying = False
+
+    def _plain_game_laid_down(self) -> bool:
+        """Betl or durch whose result the declarer's own cards already guarantee.
+
+        Checked before every trick.  The declarer cannot know how the outstanding
+        cards are split, so the test assumes the worst: any one defender may hold
+        all of them.
+        """
+        assert self.contract is not None and self.declarer is not None
+        if self.contract.type not in (ContractType.BETL, ContractType.DURCH) or self.trick:
+            return False
+        own = self.hands[self.declarer]
+        outstanding = [c for d in self.defenders for c in self.hands[d]]
+        on_lead = self.leader == self.declarer
+        if self.contract.type is ContractType.BETL:
+            if betl_catching_cards(own, outstanding):
+                return False
+            if on_lead and not any(c[0] == o[0] for c in own for o in outstanding):
+                return False  # every possible lead would win the trick
+            part = Part.BETL
+        else:
+            if not on_lead or not all(
+                durch_suit_is_solid([c for c in own if c[0] == s], [c for c in outstanding if c[0] == s])
+                for s in {c[0] for c in own}
+            ):
+                return False
+            part = Part.DURCH
+        details = {"game": part.value, "p": self.declarer, "tricks": len(self.tricks)}
+        self.laid_down[part] = (True, details)
+        self._log("laid_down", **details)
+        return True
 
     # ------------------------------------------------------------------- play
 
@@ -403,7 +551,9 @@ class Deal:
         self.turn = winner
 
         if len(self.tricks) == TRICKS_PER_DEAL or self._decided_early(record):
-            self._finish(Outcome.PLAYED)
+            self._finish(Outcome.LAID_DOWN if self.laid_after is not None else Outcome.PLAYED)
+        else:
+            self._check_laid_down()
 
     def _illegal_reason(self, player: int, card: Card) -> str:
         assert self.contract is not None
@@ -506,9 +656,11 @@ class Deal:
         if self.phase is Phase.FLEK:
             return {
                 "kind": "flek",
-                "parts": [p.value for p in self.flek_open],
+                "parts": [p.value for p in self.flek_available],
                 "stage": self.flek_stage,
                 "name": FLEK_NAMES_CS[self.flek_stage - 1],
+                # What the partner has already doubled in this round.
+                "partner": [p.value for p in self.flek_open if p in self._flek_stage_union],
             }
         legal = self.legal_plays(player)
         return {
@@ -552,6 +704,8 @@ class Deal:
             "hlasky": [list(h) for h in self.hlasky],
             "options": self.options(player) if player is not None else None,
             "result": self.result.to_dict() if done and self.result is not None else None,
+            "laid_down": {p.value: {"won": w, **d} for p, (w, d) in self.laid_down.items()},
+            "laid_after": self.laid_after,
         }
         if done:
             view["reveal"] = {

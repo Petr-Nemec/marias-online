@@ -39,7 +39,8 @@
             <button class="primary" type="submit">Vstoupit do herny</button>
           </div>
           <p class="hint">Stačí přezdívka, žádná registrace. Prohlížeč si tě zapamatuje, takže se po výpadku
-            připojení vrátíš ke svému stolu.</p>
+            připojení vrátíš ke svému stolu.
+            <button type="button" class="link" data-privacy>Ochrana soukromí</button></p>
         </form>
       </div>
     </section>
@@ -85,6 +86,7 @@
             Soukromý stůl – jen přes odkaz</label>
           <button class="primary" type="submit">Založit stůl a přisednout</button>
         </form>
+        <p class="side-foot"><button type="button" class="link" data-privacy>Ochrana soukromí</button></p>
       </aside>
     </section>
 
@@ -149,7 +151,7 @@
         <li><b>Sto</b>: uhrát aspoň 100 bodů, do stovky se počítá jen jedna hláška.</li>
         <li><b>Betl</b>: nevzít žádný štych. <b>Durch</b>: vzít všechny. Bez trumfů, vynáší aktér.</li>
         <li><b>Dvě sedmy</b>: aktér určí trumfy a pomocnou barvu. Předposlední štych musí vzít pomocnou
-          sedmou a poslední trumfovou. Má-li některý obránce čtyři a více pomocných, platí aktér.</li>
+          sedmou a poslední trumfovou.</li>
       </ul>
 
       <h3>Sehrávka</h3>
@@ -158,9 +160,11 @@
         stačí ji přiznat. Hlášenou sedmu smíš zahrát až jako poslední kartu její barvy.</p>
 
       <h3>Fleky</h3>
-      <p>Obrana může dát flek, aktér re, obrana tutti a aktér boty. Každý stupeň sazbu zdvojnásobí. Zvyšovat
-        lze jen tu část závazku, kterou soupeř právě fleknul. Sedma se sehrává jen s flekem na sedmu nebo
-        s re na hru; jinak se rovnou vyplatí.</p>
+      <p>Obrana může dát flek, aktér re, obrana tutti a aktér boty. Každý stupeň sazbu zdvojnásobí. Nejdřív
+        se ptá první obránce, pak druhý (ten může fleknout to, co první nechal, a vynechá se, když už je
+        fleknuto všechno), nakonec aktér. Flek jednoho obránce platí za celou obranu. Zvyšovat lze jen tu
+        část závazku, kterou soupeř právě fleknul. Sedma se sehrává jen s flekem na sedmu nebo s re na hru;
+        jinak se rovnou vyplatí.</p>
 
       <h3>Sazby (základ 0,20 Kč)</h3>
       <table class="rates">
@@ -177,8 +181,55 @@
       <h3>Prémiové body</h3>
       <p>Za hlášené a vyhrané těžké hry a za úspěšné fleky na betl a durch se připisují prémiové body
         podle bodovací tabulky ČSM 2014. Rozhoduje počet trumfů (včetně karet odložených do talonu) a to,
-        zda měl aktér výnos. Červené trumfy body zdvojnásobí. U betlu a durchu program „chytající“ karty
+        zda měl aktér výnos. Odložením karet do talonu lze o prémiové body přijít, ale nelze je získat. Červené trumfy body zdvojnásobí. U betlu a durchu program „chytající“ karty
         a „ložené“ barvy posuzuje podle pevného vzorce, popsaného v dokumentaci.</p>
+
+      <h3>Ložená hra</h3>
+      <p>Betl, který aktér nemůže prohrát (obrana nemá v žádné barvě kartu nižší než on), a durch, ve kterém
+        má aktér všechny barvy ložené a je na výnosu, se ukončí hned, jakmile to platí. Sedma a sto se
+        položí, když je aktér na výnosu a jistě vezme všechny zbývající štychy; připíšou se mu. Dvě sedmy
+        prohrává aktér bez sehrávky, když obrana dá na dvě sedmy flek a některý obránce má aspoň tolik
+        pomocných jako aktér, nebo když aktér nemá obě sedmy.</p>
+      <p><button type="button" class="link" data-privacy>Ochrana soukromí</button></p>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-privacy" class="dialog help">
+    <div class="help-head">
+      <h2>Ochrana soukromí</h2>
+      <button type="button" class="ghost" data-close>Zavřít</button>
+    </div>
+    <div class="help-body">
+      <p>Mariáš Online zpracovává jen to, bez čeho hra nemůže fungovat. Nemá registraci, nepoužívá cookies,
+        analytické ani reklamní nástroje a nenačítá nic z cizích serverů.</p>
+
+      <h3>Kdo údaje zpracovává</h3>
+      <p>Správcem je <span id="privacy-operator">provozovatel tohoto serveru</span>.
+        <span id="privacy-contact-line" hidden>Kontakt: <span id="privacy-contact"></span>.</span></p>
+
+      <h3>Jaké údaje a proč</h3>
+      <ul>
+        <li><b>Přezdívka</b>, kterou si zvolíš. Vidí ji ostatní hráči v herně a u stolu.</li>
+        <li><b>Náhodný identifikátor hosta</b>. Prohlížeč si ho uloží (v úložišti localStorage), aby tě po
+          výpadku spojení vrátil ke tvému stolu. Server drží jen jeho otisk, ne samotný identifikátor.</li>
+        <li><b>Průběh her, lístek a zprávy v chatu</b> u stolu. Vidí je hráči a diváci u téhož stolu.</li>
+        <li><b>IP adresa</b> slouží jen k omezení počtu spojení a k ochraně před zneužitím. Aplikace ji
+          nikam neukládá. Reverzní proxy serveru ji může zapisovat do provozních záznamů.</li>
+        <li>V prohlížeči se dále ukládá, zda máš zapnutý zvuk a automatické hlášky.</li>
+      </ul>
+      <p>Právním základem je poskytnutí hry, o kterou sis řekl (čl. 6 odst. 1 písm. b GDPR), a oprávněný
+        zájem na bezpečném provozu služby (čl. 6 odst. 1 písm. f GDPR).</p>
+
+      <h3>Jak dlouho</h3>
+      <p>Všechno se drží jen v operační paměti serveru, žádná databáze neexistuje. Stůl i jeho chat
+        zmizí, když se stůl zavře nebo se server restartuje. Identita hosta zanikne po
+        <span id="privacy-hours">24</span> hodinách bez připojení. Údaje v prohlížeči smažeš vymazáním dat
+        tohoto webu.</p>
+
+      <h3>Tvoje práva</h3>
+      <p>Máš právo na přístup k údajům, jejich opravu, výmaz, omezení zpracování a právo vznést námitku.
+        Můžeš se obrátit na správce, nebo podat stížnost u Úřadu pro ochranu osobních údajů
+        (www.uoou.gov.cz).</p>
     </div>
   </dialog>
 

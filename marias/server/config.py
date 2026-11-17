@@ -45,6 +45,9 @@ class Settings:
     #: Send Strict-Transport-Security (enable only when served over HTTPS).
     hsts: bool = False
     log_level: str = "INFO"
+    #: Who runs this server and how to reach them – shown in the privacy notice.
+    operator: str = ""
+    contact: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -58,4 +61,6 @@ class Settings:
             session_ttl=_int("MARIAS_SESSION_TTL", 24 * 3600, minimum=60, maximum=30 * 24 * 3600),
             hsts=_bool("MARIAS_HSTS", False),
             log_level=os.environ.get("MARIAS_LOG_LEVEL", "INFO").upper(),
+            operator=os.environ.get("MARIAS_OPERATOR", "").strip()[:200],
+            contact=os.environ.get("MARIAS_CONTACT", "").strip()[:200],
         )

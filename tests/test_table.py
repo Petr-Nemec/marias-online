@@ -3,12 +3,14 @@ import random
 
 import pytest
 
+from marias import bot
 from marias.deal import Phase
 from marias.table import (
-    AWAY_TURN_SECONDS,
     BETWEEN_DEALS_SECONDS,
     DISCONNECT_GRACE_SECONDS,
-    TIMEOUTS_BEFORE_AWAY,
+    KICK_REASON,
+    LONG_DISCONNECT_REASON,
+    TIMEOUTS_BEFORE_KICK,
     Table,
     TableError,
     TableOptions,
@@ -151,8 +153,6 @@ def test_bots_fill_seats_and_play_by_themselves():
             assert table.tick(now)
         else:
             role = table.role_of(seat.index)
-            from marias import bot
-
             table.act(seat.player_id, bot.choose_action(table.deal, role, random.Random(0)), now)
     assert table.status == "between"
     with pytest.raises(TableError):
@@ -161,24 +161,56 @@ def test_bots_fill_seats_and_play_by_themselves():
     assert table.status == "waiting"
 
 
-def test_timeouts_make_a_player_away_and_bot_plays_for_him():
+def test_two_missed_turns_remove_the_player():
     table = make_table(turn_seconds=30)
     ready_all(table)
+    victim = table.seat_on_turn()
+    victim_id = victim.player_id
     now = 0.0
-    for _ in range(50):  # let everyone run out of time until somebody is marked away
-        if any(s.away for s in table.seats) or table.status != "playing":
+    missed = 0
+    for _ in range(200):
+        if table.seat_of(victim_id) is None or table.status != "playing":
             break
+        seat = table.seat_on_turn()
         now = table.deadline
-        assert table.tick(now)
-    away = next(s for s in table.seats if s.away)
-    assert away.timeouts >= TIMEOUTS_BEFORE_AWAY
-    while table.status == "playing" and table.seat_on_turn() is not away:
-        now = table.deadline
-        table.tick(now)
+        if seat is victim:
+            table.tick(now)  # the victim lets his clock run out
+            missed += 1
+        else:
+            role = table.role_of(seat.index)
+            table.act(seat.player_id, bot.choose_action(table.deal, role, random.Random(0)), now)
+    assert missed == TIMEOUTS_BEFORE_KICK
+    assert table.seat_of(victim_id) is None
+    assert table.departures == [(victim_id, KICK_REASON)]
     if table.status == "playing":
-        assert table.deadline == pytest.approx(now + AWAY_TURN_SECONDS)
-        table.back(away.player_id, now)
-        assert not away.away and table.deadline == pytest.approx(now + 30)
+        assert victim.is_bot  # a computer finishes the hand
+
+
+def test_acting_resets_the_missed_turn_counter():
+    table = make_table(turn_seconds=30)
+    ready_all(table)
+    seat = table.seat_on_turn()
+    table.tick(table.deadline)
+    assert seat.timeouts == 1
+    for _ in range(100):
+        on_turn = table.seat_on_turn()
+        if on_turn is seat or on_turn is None:
+            break
+        role = table.role_of(on_turn.index)
+        table.act(on_turn.player_id, bot.choose_action(table.deal, role, random.Random(0)), 0.0)
+    if table.seat_on_turn() is seat:
+        role = table.role_of(seat.index)
+        table.act(seat.player_id, bot.choose_action(table.deal, role, random.Random(0)), 0.0)
+        assert seat.timeouts == 0
+
+
+def test_disconnected_player_is_not_counted_as_missing_turns():
+    table = make_table(turn_seconds=30)
+    ready_all(table)
+    seat = table.seat_on_turn()
+    table.set_connected(seat.player_id, False, 0.0)
+    table.tick(table.deadline)
+    assert seat.timeouts == 0 and table.seat_of(seat.player_id) is seat
 
 
 def test_leaving_mid_deal_hands_the_cards_to_a_bot():
@@ -201,6 +233,7 @@ def test_disconnected_players_are_freed_after_grace_period():
     assert not table.sweep(10.0 + DISCONNECT_GRACE_SECONDS - 1)
     assert table.sweep(10.0 + DISCONNECT_GRACE_SECONDS + 1)
     assert table.seat_of("p1") is None
+    assert table.departures == [("p1", LONG_DISCONNECT_REASON)]
 
 
 def test_next_deal_starts_automatically_after_pause():
@@ -210,8 +243,13 @@ def test_next_deal_starts_automatically_after_pause():
     ready_all(table)
     now = 0.0
     while table.status == "playing":
-        now = table.deadline
-        table.tick(now)  # the human times out too and the bot plays for him
+        seat = table.seat_on_turn()
+        now = table.deadline or now
+        if seat.is_bot:
+            table.tick(now)
+        else:
+            role = table.role_of(seat.index)
+            table.act(seat.player_id, bot.choose_action(table.deal, role, random.Random(0)), now)
     assert table.status == "between"
     assert table.tick(now + BETWEEN_DEALS_SECONDS + 1)
     assert table.status == "playing" and table.deal_number == 2

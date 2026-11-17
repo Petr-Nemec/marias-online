@@ -138,7 +138,8 @@ def score_deal(deal: Deal) -> DealResult:
     assert deal.contract is not None
     contract = deal.contract
     red = 2 if contract.red else 1
-    played = deal.outcome is Outcome.PLAYED
+    # A laid-down point game was credited trick by trick, so it scores like a played one.
+    played = deal.outcome is Outcome.PLAYED or deal.laid_after is not None
 
     def rate(part: Part) -> int:
         return RATE_UNITS[part] * red << deal.flek_counts[part]
@@ -191,8 +192,6 @@ def score_deal(deal: Deal) -> DealResult:
         elif part is Part.SEDMA:
             if not played:
                 add(part, True, note="schválená")
-            elif part in deal.auto_lost:
-                add(part, False, note="hlášená bez trumfové sedmy")
             else:
                 assert last is not None
                 won = last.winner == declarer and last.card_of(declarer) == f"{contract.trump}7"
@@ -213,18 +212,23 @@ def score_deal(deal: Deal) -> DealResult:
                 add(part, False, missing + against, note)
 
         elif part is Part.BETL:
-            add(part, not any(t.winner == declarer for t in deal.tricks))
+            note = "ložený" if part in deal.laid_down else ""
+            add(part, not any(t.winner == declarer for t in deal.tricks), note=note)
 
         elif part is Part.DURCH:
-            add(part, len(deal.tricks) == 10 and all(t.winner == declarer for t in deal.tricks))
+            if part in deal.laid_down:
+                add(part, True, note="ložený")
+            else:
+                add(part, len(deal.tricks) == 10 and all(t.winner == declarer for t in deal.tricks))
 
         elif part is Part.DVE_SEDMY:
-            if deal.outcome is Outcome.FOUR_HELPERS or (
-                played and part in deal.auto_lost and _four_helpers(deal)
-            ):
-                add(part, False, note="čtyři a více pomocných v jedné ruce obrany")
-            elif deal.outcome is Outcome.MISSING_SEVEN or part in deal.auto_lost:
-                add(part, False, note="hlášeno bez obou sedem")
+            if part in deal.laid_down:
+                details = deal.laid_down[part][1]
+                if "missing" in details:
+                    note = "ložená: aktér nemá obě hlášené sedmy"
+                else:
+                    note = f"ložená: obránce má {details['theirs']} pomocných, aktér {details['mine']}"
+                add(part, False, note=note)
             else:
                 add(part, len(deal.tricks) == 10 and not deal.two_sevens_failed)
 
@@ -236,12 +240,6 @@ def score_deal(deal: Deal) -> DealResult:
     result.pb = pb
     result.pb_items = items
     return result
-
-
-def _four_helpers(deal: Deal) -> bool:
-    assert deal.contract is not None
-    helper = deal.contract.helper
-    return any(sum(1 for c in deal.play_hands[d] if c[0] == helper) >= 4 for d in deal.defenders)
 
 
 def _silent_seven(deal: Deal, result: DealResult, last: Any, red: int) -> None:

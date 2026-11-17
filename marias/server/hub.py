@@ -181,6 +181,7 @@ class Hub:
                     self._close_table(table, "Stůl byl kvůli chybě zavřen. Omlouváme se.")
                     continue
                 if changed:
+                    self._notify_departures(table)
                     self._broadcast_table(table, now)
         if now - self._last_sweep >= SWEEP_SECONDS:
             self._last_sweep = now
@@ -192,7 +193,7 @@ class Hub:
     def _sweep(self, now: float) -> None:
         for table in list(self.tables.values()):
             if table.sweep(now):
-                self._detach_departed(table)
+                self._notify_departures(table)
                 self._broadcast_table(table, now)
                 self._lobby_dirty = True
             nobody = not table.humans and not table.spectators
@@ -208,16 +209,18 @@ class Hub:
             self.sessions.pop(session.id, None)
             self._by_token.pop(session.token_hash, None)
 
-    def _detach_departed(self, table: Table) -> None:
-        """Clear ``table_id`` of sessions that no longer sit or watch at ``table``."""
-        for session in self.sessions.values():
-            if session.table_id != table.id:
+    def _notify_departures(self, table: Table) -> None:
+        """Tell players the table removed (two missed turns, long disconnect) and send them to the lobby."""
+        departures, table.departures = table.departures, []
+        for player_id, reason in departures:
+            session = self.sessions.get(player_id)
+            if session is None or session.table_id != table.id:
                 continue
-            if table.seat_of(session.id) is None and session.id not in table.spectators:
-                session.table_id = None
-                if session.client is not None:
-                    session.client.send({"type": "left", "reason": "Byl jsi dlouho odpojen."})
-                    self._send_lobby(session.client)
+            session.table_id = None
+            if session.client is not None:
+                session.client.send({"type": "left", "reason": reason})
+                self._send_lobby(session.client)
+            self._lobby_dirty = True
 
     def _close_table(self, table: Table, reason: str) -> None:
         self.tables.pop(table.id, None)
@@ -326,8 +329,6 @@ class Hub:
                 table.remove_bot(message.seat, now)
             elif isinstance(message, protocol.Ready):
                 table.set_ready(session.id, now)
-            elif isinstance(message, protocol.Back):
-                table.back(session.id, now)
             elif isinstance(message, protocol.Chat):
                 if not client.chat.take():
                     raise TableError("rate_limited", "Píšeš příliš rychle.")

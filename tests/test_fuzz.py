@@ -62,9 +62,12 @@ def test_thousands_of_deals(policy):
                 action = bot.choose_action(deal, player, rng)
             else:
                 action = random_action(deal, player, rng)
-            # Random actions are not always legal; a rejected one must change nothing.
-            with contextlib.suppress(RuleError):
-                apply(deal, player, action)
+            if policy == "bot":
+                apply(deal, player, action)  # computer players must never move illegally
+            else:
+                # Random actions are not always legal; a rejected one must change nothing.
+                with contextlib.suppress(RuleError):
+                    apply(deal, player, action)
             check_invariants(deal)
         assert deal.phase is Phase.DONE
         result = deal.result
@@ -72,6 +75,10 @@ def test_thousands_of_deals(policy):
         assert result.units == max(-result.limit, min(result.limit, sum(p.units for p in result.parts)))
         if deal.outcome is Outcome.PLAYED and deal.contract.counts_points and len(deal.tricks) == 10:
             assert sum(deal.trick_points(p) for p in range(3)) == 90
+        if deal.laid_after is not None:
+            # A laid-down hand must really be unbeatable: every credited trick is the declarer's.
+            assert all(t.winner == deal.declarer for t in deal.tricks[deal.laid_after :])
+            assert len(deal.tricks) == 10
         outcomes.add(deal.outcome)
         # The view must always be JSON-friendly for every seat.
         for seat in (0, 1, 2, None):
@@ -91,3 +98,19 @@ def test_rejected_actions_leave_the_state_unchanged():
                 apply(deal, player, action)
             except RuleError:
                 assert snapshot(deal) == before
+
+
+def test_fallback_move_is_always_legal():
+    rng = random.Random(77)
+    for _ in range(400):
+        deal = Deal(shuffled_deck(rng))
+        for _step in range(300):
+            if deal.phase is Phase.DONE:
+                break
+            player = deal.turn
+            if rng.random() < 0.3:
+                apply(deal, player, bot.fallback_action(deal, player))
+            else:
+                with contextlib.suppress(RuleError):
+                    apply(deal, player, random_action(deal, player, rng))
+        assert deal.phase is Phase.DONE
