@@ -1,0 +1,53 @@
+# systemd unit for Mariáš Online without Docker.
+#
+#   sudo useradd --system --home /opt/marias --shell /usr/sbin/nologin marias
+#   sudo git clone https://github.com/Petr-Nemec/marias-online /opt/marias
+#   sudo python3 -m venv /opt/marias/.venv
+#   sudo /opt/marias/.venv/bin/pip install -r /opt/marias/requirements.txt
+#   sudo cp /opt/marias/deploy/marias.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now marias
+[Unit]
+Description=Mariáš Online
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=marias
+Group=marias
+WorkingDirectory=/opt/marias
+Environment=MARIAS_HOST=127.0.0.1
+Environment=MARIAS_PORT=8000
+Environment=MARIAS_ALLOWED_ORIGINS=https://marias.example.cz
+Environment=MARIAS_HSTS=true
+ExecStart=/opt/marias/.venv/bin/python -m marias.server
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+{$MARIAS_DOMAIN} {
+	encode zstd gzip
+	# Caddy forwards WebSocket upgrades and sets X-Forwarded-For automatically.
+	reverse_proxy marias:8000
+	log {
+		output stdout
+		format console
+	}
+}
